@@ -133,6 +133,24 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Insufficient stock", exception.getMessage(), request);
     }
 
+    /** The order is not in a state that permits what was asked. */
+    @ExceptionHandler(InvalidOrderStateException.class)
+    ProblemDetail handleInvalidOrderState(InvalidOrderStateException exception,
+                                          HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), request);
+    }
+
+    /**
+     * 402 rather than 409: nothing about the order is wrong, the money simply did not arrive, and the
+     * order stays payable so the customer can try another instrument.
+     */
+    @ExceptionHandler(PaymentDeclinedException.class)
+    ProblemDetail handlePaymentDeclined(PaymentDeclinedException exception,
+                                        HttpServletRequest request) {
+        return problem(HttpStatus.PAYMENT_REQUIRED, "Payment declined", exception.getMessage(),
+                request);
+    }
+
     @ExceptionHandler(RateLimitExceededException.class)
     ProblemDetail handleRateLimited(RateLimitExceededException exception,
                                      HttpServletRequest request) {

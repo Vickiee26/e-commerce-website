@@ -71,6 +71,8 @@ public abstract class AbstractIntegrationTest {
                                addresses,
                                cart_items,
                                carts,
+                               order_items,
+                               orders,
                                user_roles,
                                users,
                                product_resources,
