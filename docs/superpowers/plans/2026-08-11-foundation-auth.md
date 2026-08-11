@@ -34,6 +34,7 @@ Every task's requirements implicitly include this section.
 - **Testcontainers 2.x renamed its modules.** The artifact is `testcontainers-postgresql` (not `postgresql`) and the container class is `org.testcontainers.postgresql.PostgreSQLContainer`, which is **not generic** — write `new PostgreSQLContainer("postgres:16-alpine")`, never `new PostgreSQLContainer<>(...)`.
 - **Bucket4j package is `io.github.bucket4j`** (not `com.bucket4j`). Bandwidth uses the staged builder: `Bandwidth.builder().capacity(n).refillGreedy(n, duration).build()`.
 - **springdoc 3.x** is the Boot 4 line. springdoc 2.x targets Boot 3 and will not work here.
+- **Spring Framework 7 detects handlers by `@Controller` only.** `RequestMappingHandlerMapping.isHandler` no longer accepts a class carrying just a type-level `@RequestMapping`; such a class is silently never mapped and its routes 404 (or surface as `NoResourceFoundException`). Every controller, including test-only probes, needs `@RestController` or `@Controller`.
 - **Boot 4 split the test slices per technology.** `@AutoConfigureMockMvc` and `@WebMvcTest` are no longer in `spring-boot-test-autoconfigure`; they live in `spring-boot-webmvc-test` under the package **`org.springframework.boot.webmvc.test.autoconfigure`**. Declare `org.springframework.boot:spring-boot-starter-webmvc-test` (BOM-managed, test scope) — verified against the 4.1.0 jar. `@SpringBootTest` and `@TestConfiguration` are unchanged at `org.springframework.boot.test.context.*`.
 - **Boot 4 moved Flyway autoconfiguration into its own module.** `FlywayAutoConfiguration` is in `spring-boot-flyway`, not `spring-boot-autoconfigure`. Declaring `flyway-core` alone puts Flyway on the classpath but never runs it, and `ddl-auto=validate` then fails with `missing table [categories]`. Declare `org.springframework.boot:spring-boot-starter-flyway` (BOM-managed) **instead of** `flyway-core`, plus `org.flywaydb:flyway-database-postgresql`.
 - **Jackson 3 is the auto-configured mapper.** Boot 4 registers a `tools.jackson.databind.json.JsonMapper` bean (a subclass of `tools.jackson.databind.ObjectMapper`). Jackson 2 (`com.fasterxml.jackson.*`) is still on the classpath transitively via jjwt-jackson and springdoc, but **has no bean** — injecting `com.fasterxml.jackson.databind.ObjectMapper` fails with `NoSuchBeanDefinitionException`. Every `ObjectMapper`/`JsonNode` in this plan is the **`tools.jackson.databind`** one.
@@ -3982,7 +3983,6 @@ import org.springframework.context.annotation.Import;
 ```java
 @SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 @ActiveProfiles("test")
 @Import(TestDataConfig.class)
 public abstract class AbstractIntegrationTest {
@@ -4166,7 +4166,19 @@ class SecurityConfigIT extends AbstractIntegrationTest {
         assertThat(passwordEncoder.matches("wrong", hash)).isFalse();
     }
 
-    /** Stand-ins for the real controllers, which arrive in later tasks. */
+    /**
+     * Stand-ins for the real controllers, which arrive in later tasks.
+     *
+     * <p>{@code ProbeController} is registered by nesting alone, with no {@code @Bean} method:
+     * {@code @RestController} is meta-annotated {@code @Component}, and a member class of a
+     * {@code @Configuration} that carries a component annotation is itself processed as a
+     * configuration class. Adding an explicit {@code @Bean} on top of that registers the class
+     * twice and the context fails with "Ambiguous mapping".
+     *
+     * <p>{@code @RestController} is also required rather than optional: Spring Framework 7's
+     * {@code RequestMappingHandlerMapping.isHandler} tests for {@code @Controller} only, so a class
+     * carrying just {@code @RequestMapping} is never mapped and every probe request 404s.
+     */
     @TestConfiguration
     static class ProbeConfig {
 
@@ -4194,16 +4206,9 @@ class SecurityConfigIT extends AbstractIntegrationTest {
                 return "admin";
             }
         }
-
-        @Bean
-        ProbeController probeController() {
-            return new ProbeController();
-        }
     }
 }
 ```
-
-Add the missing import to that file: `import org.springframework.context.annotation.Bean;`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -4211,7 +4216,7 @@ Add the missing import to that file: `import org.springframework.context.annotat
 ./mvnw -q verify -Dit.test=SecurityConfigIT -DfailIfNoTests=false
 ```
 
-Expected: compilation failure — `cannot find symbol: class JwtAuthenticationFilter`, and `PasswordEncoder` has no bean.
+Expected: all 14 tests error during context startup with `Parameter 2 of method testDataFactory in TestDataConfig required a bean of type 'PasswordEncoder' that could not be found`. (The test code itself compiles: nothing in it names `JwtAuthenticationFilter` directly.)
 
 - [ ] **Step 3: Write `ProblemResponseWriter`**
 
