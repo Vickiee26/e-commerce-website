@@ -69,6 +69,8 @@ public abstract class AbstractIntegrationTest {
                                password_reset_tokens,
                                refresh_tokens,
                                addresses,
+                               cart_items,
+                               carts,
                                user_roles,
                                users,
                                product_resources,

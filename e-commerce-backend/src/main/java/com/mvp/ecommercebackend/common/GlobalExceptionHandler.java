@@ -123,6 +123,16 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), request);
     }
 
+    /**
+     * Conflict rather than 400: the request is well formed and the variant exists, so the client has
+     * nothing to correct — the available quantity changed.
+     */
+    @ExceptionHandler(InsufficientStockException.class)
+    ProblemDetail handleInsufficientStock(InsufficientStockException exception,
+                                          HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Insufficient stock", exception.getMessage(), request);
+    }
+
     @ExceptionHandler(RateLimitExceededException.class)
     ProblemDetail handleRateLimited(RateLimitExceededException exception,
                                      HttpServletRequest request) {

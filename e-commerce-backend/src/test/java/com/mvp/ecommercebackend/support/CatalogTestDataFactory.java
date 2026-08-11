@@ -120,6 +120,20 @@ public class CatalogTestDataFactory {
         return productRepository.saveAndFlush(owner);
     }
 
+    /**
+     * Adds a variant and returns the variant rather than its product, for tests that need the
+     * variant id — a cart line references a variant, since that is where stock lives.
+     */
+    @Transactional
+    public ProductVariant createVariant(Product product, String color, String size,
+                                        int stockQuantity) {
+        return addVariant(product, color, size, stockQuantity).getProductVariants().stream()
+                .filter(variant -> color.equals(variant.getColor()) && size.equals(variant.getSize()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Variant " + color + "/" + size + " was not saved"));
+    }
+
     private Product reload(Product product) {
         return productRepository.findById(product.getId())
                 .orElseThrow(() -> new IllegalStateException(
