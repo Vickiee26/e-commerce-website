@@ -9,9 +9,11 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.net.URI;
@@ -60,6 +62,36 @@ public class GlobalExceptionHandler {
                 "Request contains invalid fields", request);
         problem.setProperty("errors", errors);
         return problem;
+    }
+
+    /**
+     * A constraint on a query parameter or path variable failed.
+     *
+     * <p>Distinct from {@link ConstraintViolationException}: since Spring Framework 6.1, controller
+     * method validation is built in and raises this instead, so without a handler here an
+     * out-of-range page size would leave as a 500.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ProblemDetail handleParameterValidationFailure(HandlerMethodValidationException exception,
+                                                   HttpServletRequest request) {
+        List<FieldErrorDetail> errors = exception.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> new FieldErrorDetail(
+                                parameterName(result),
+                                error.getDefaultMessage() == null
+                                        ? "is invalid" : error.getDefaultMessage())))
+                .toList();
+
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "Validation failed",
+                "Request contains invalid parameters", request);
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+
+    /** Requires {@code -parameters} at compile time, which the Spring Boot parent pom sets. */
+    private static String parameterName(ParameterValidationResult result) {
+        String name = result.getMethodParameter().getParameterName();
+        return name == null ? "request" : name;
     }
 
     /** Unparseable body, or a path variable that is not the declared type. */

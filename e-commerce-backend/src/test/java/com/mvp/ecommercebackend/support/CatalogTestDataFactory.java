@@ -49,6 +49,31 @@ public class CatalogTestDataFactory {
         return categoryRepository.saveAndFlush(category).getCategoryTypes().get(0);
     }
 
+    /**
+     * Adds a second (or third) type to an existing category.
+     *
+     * <p>Needed because {@code categories.code} is unique, so calling
+     * {@link #createCategoryWithType} twice with the same category name violates that constraint.
+     * See {@link #addImage} for why the owner is re-read.
+     */
+    @Transactional
+    public CategoryType addCategoryType(Category category, String typeName) {
+        Category owner = categoryRepository.findById(category.getId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Fixture category " + category.getId() + " is not in the database"));
+        CategoryType type = new CategoryType();
+        type.setName(typeName);
+        type.setCode(slug(typeName));
+        type.setDescription(typeName + " description");
+        type.setCategory(owner);
+        owner.getCategoryTypes().add(type);
+
+        return categoryRepository.saveAndFlush(owner).getCategoryTypes().stream()
+                .filter(saved -> slug(typeName).equals(saved.getCode()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Type " + typeName + " was not saved"));
+    }
+
     public Product createProduct(CategoryType type, String name, String price) {
         Product product = new Product();
         product.setName(name);
