@@ -29,11 +29,14 @@ Every task's requirements implicitly include this section.
 - **Enumeration safety:** login failure and password-reset request must not reveal whether an email is registered.
 - **Test naming:** unit tests end in `Test` (Surefire), integration tests end in `IT` (Failsafe). `./mvnw verify` runs both.
 - **Exact dependency versions** (verified against Maven Central and the Boot 4.1.0 BOM — do not substitute):
-  - BOM-managed, declare with **no** `<version>`: `spring-boot-starter-security`, `spring-boot-starter-validation`, `spring-boot-starter-actuator`, `flyway-core`, `flyway-database-postgresql` (12.4.0), `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql`, `org.testcontainers:testcontainers-junit-jupiter` (2.0.5), `spring-security-test` (7.1.0).
+  - BOM-managed, declare with **no** `<version>`: `spring-boot-starter-security`, `spring-boot-starter-validation`, `spring-boot-starter-actuator`, `spring-boot-starter-flyway`, `spring-boot-starter-webmvc-test`, `flyway-database-postgresql` (12.4.0), `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql`, `org.testcontainers:testcontainers-junit-jupiter` (2.0.5), `spring-security-test` (7.1.0).
   - Explicit versions: `io.jsonwebtoken:jjwt-api|jjwt-impl|jjwt-jackson:0.13.0`, `com.bucket4j:bucket4j_jdk17-core:8.19.0`, `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0`.
 - **Testcontainers 2.x renamed its modules.** The artifact is `testcontainers-postgresql` (not `postgresql`) and the container class is `org.testcontainers.postgresql.PostgreSQLContainer`, which is **not generic** — write `new PostgreSQLContainer("postgres:16-alpine")`, never `new PostgreSQLContainer<>(...)`.
 - **Bucket4j package is `io.github.bucket4j`** (not `com.bucket4j`). Bandwidth uses the staged builder: `Bandwidth.builder().capacity(n).refillGreedy(n, duration).build()`.
 - **springdoc 3.x** is the Boot 4 line. springdoc 2.x targets Boot 3 and will not work here.
+- **Boot 4 split the test slices per technology.** `@AutoConfigureMockMvc` and `@WebMvcTest` are no longer in `spring-boot-test-autoconfigure`; they live in `spring-boot-webmvc-test` under the package **`org.springframework.boot.webmvc.test.autoconfigure`**. Declare `org.springframework.boot:spring-boot-starter-webmvc-test` (BOM-managed, test scope) — verified against the 4.1.0 jar. `@SpringBootTest` and `@TestConfiguration` are unchanged at `org.springframework.boot.test.context.*`.
+- **Boot 4 moved Flyway autoconfiguration into its own module.** `FlywayAutoConfiguration` is in `spring-boot-flyway`, not `spring-boot-autoconfigure`. Declaring `flyway-core` alone puts Flyway on the classpath but never runs it, and `ddl-auto=validate` then fails with `missing table [categories]`. Declare `org.springframework.boot:spring-boot-starter-flyway` (BOM-managed) **instead of** `flyway-core`, plus `org.flywaydb:flyway-database-postgresql`.
+- **Jackson 3 is the auto-configured mapper.** Boot 4 registers a `tools.jackson.databind.json.JsonMapper` bean (a subclass of `tools.jackson.databind.ObjectMapper`). Jackson 2 (`com.fasterxml.jackson.*`) is still on the classpath transitively via jjwt-jackson and springdoc, but **has no bean** — injecting `com.fasterxml.jackson.databind.ObjectMapper` fails with `NoSuchBeanDefinitionException`. Every `ObjectMapper`/`JsonNode` in this plan is the **`tools.jackson.databind`** one.
 
 ---
 
@@ -355,6 +358,16 @@ In `pom.xml`, replace the entire `<dependencies>` element with:
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Boot 4 split the test slices per technology: @AutoConfigureMockMvc and @WebMvcTest are
+            no longer in spring-boot-test-autoconfigure. This starter supplies spring-boot-webmvc-test,
+            which holds them under org.springframework.boot.webmvc.test.autoconfigure.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -719,18 +732,18 @@ Create `src/test/java/com/mvp/ecommercebackend/support/AbstractIntegrationTest.j
 ```java
 package com.mvp.ecommercebackend.support;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Base class for every integration test.
@@ -757,6 +770,11 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected MockMvc mockMvc;
 
+    /**
+     * Boot 4 auto-configures Jackson 3 (tools.jackson), registering a JsonMapper bean. Jackson 2
+     * (com.fasterxml.jackson) is still on the classpath transitively but has no bean, so injecting
+     * the Jackson 2 ObjectMapper fails with NoSuchBeanDefinitionException.
+     */
     @Autowired
     protected ObjectMapper objectMapper;
 
@@ -831,8 +849,10 @@ class SchemaBaselineIT extends AbstractIntegrationTest {
         List<String> indexes = jdbcTemplate.queryForList(
                 "SELECT indexdef FROM pg_indexes WHERE tablename = 'users'", String.class);
 
+        // Postgres normalises lower(email) on a varchar column to lower((email)::text) when it
+        // renders the stored index definition, so assert against that canonical form.
         assertThat(indexes).anyMatch(definition ->
-                definition.contains("UNIQUE") && definition.contains("lower(email"));
+                definition.contains("UNIQUE") && definition.contains("lower((email)"));
     }
 
     @Test
@@ -4182,7 +4202,7 @@ Create `src/main/java/com/mvp/ecommercebackend/config/ProblemResponseWriter.java
 ```java
 package com.mvp.ecommercebackend.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
@@ -4332,7 +4352,7 @@ Create `src/main/java/com/mvp/ecommercebackend/config/SecurityConfig.java`:
 ```java
 package com.mvp.ecommercebackend.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.mvp.ecommercebackend.auth.TokenService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -4492,7 +4512,7 @@ import com.mvp.ecommercebackend.auth.entity.UserStatus;
 import com.mvp.ecommercebackend.auth.repository.AuthEventRepository;
 import com.mvp.ecommercebackend.auth.repository.UserRepository;
 import com.mvp.ecommercebackend.support.AbstractIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -5261,7 +5281,7 @@ Create `src/test/java/com/mvp/ecommercebackend/auth/RefreshRotationIT.java`:
 ```java
 package com.mvp.ecommercebackend.auth;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.mvp.ecommercebackend.auth.entity.AuthEventType;
 import com.mvp.ecommercebackend.auth.entity.User;
 import com.mvp.ecommercebackend.auth.entity.UserStatus;
