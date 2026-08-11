@@ -45,11 +45,14 @@ Every task's requirements implicitly include this section.
 
 ## Deviations from the design doc
 
-These three points resolve conflicts or gaps found while planning. They are deliberate.
+These points resolve conflicts or gaps found while planning and while building. They are deliberate. Points 1–3 were known before any code was written; points 4–5 came out of the later tasks.
 
 1. **The initial admin user is created by an env-driven bootstrap component, not by `V2__seed_roles.sql`.** The design doc (§6) puts the first admin in the migration, but a SQL insert needs a committed BCrypt hash, which violates acceptance criterion 4 ("no credentials in committed files"). `V2__seed_roles.sql` therefore seeds only the two roles, and `AdminBootstrap` (Task 8, where the `PasswordEncoder` bean and both repositories already exist) creates the admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` if both are set, doing nothing when they are absent.
 2. **`auth_events` carries `updated_at` as well as `created_at`.** The design doc lists only `created_at` for this table (§5) but also states that all tables carry both. `AuthEvent` extends `BaseEntity`, so both columns exist. Rows are never updated in practice.
 3. **`ProductService.getProductById` needs `@Transactional(readOnly = true)` — a fourth catalog defect not listed in §9.** The method walks four lazy associations (`category`, `categoryType`, `productVariants`, `resources`) outside any transaction. With `spring.jpa.open-in-view=false` (which this plan sets, as leaving it on masks exactly this class of bug) it would throw `LazyInitializationException` on the first real request. Fixed in Task 14.
+
+4. **`orders.currency` is `varchar(3)` with a `char_length(currency) = 3` check, not `char(3)`.** Postgres reports `char` as `bpchar` (`Types#CHAR`) while a Java `String` maps to `Types#VARCHAR`, so `ddl-auto=validate` rejects the mismatch at boot. The check constraint preserves the fixed width the design doc wanted. Recorded in the header of `V4__orders.sql` as well.
+5. **Cart and checkout were pulled forward out of Slice 2.** The design doc (§13) defers "Catalog CRUD, search, images" to Slice 2 on the grounds that it needs this slice's admin authorization. That reasoning holds for *admin* CRUD, which is still deferred, but not for the read and buy paths: listing, cart and checkout need only the customer authorization this slice already built. They were requested and delivered here as Tasks 15–17. Admin catalog CRUD, search relevance ranking and image upload remain in Slice 2.
 
 Additionally, the design doc's authorization table (§6) marks `/auth/**` public while its API table (§10) marks `POST /auth/logout` as authenticated. §10 wins: the public matchers list the specific auth paths, and `/auth/logout` falls through to `anyRequest().authenticated()`.
 
@@ -165,7 +168,9 @@ src/test/java/com/mvp/ecommercebackend/
 
 ## Task order and rationale
 
-Tasks 1–4 build infrastructure nothing else can compile without (build config, schema, auth entities, error shape). Tasks 5–7 build the token and security primitives. Tasks 8–11 build the auth endpoints on top. Tasks 12–13 add user-facing features. Tasks 14–15 repair the catalog and document the API.
+Tasks 1–4 build infrastructure nothing else can compile without (build config, schema, auth entities, error shape). Tasks 5–7 build the token and security primitives. Tasks 8–11 build the auth endpoints on top. Tasks 12–13 add user-facing features. Tasks 14–18 repair the catalog, add listing, cart and checkout, and document the API.
+
+Tasks 14–18 were planned and executed after Tasks 1–13 had shipped, in response to a scope change: the catalog was first deferred, then reinstated together with product listing and checkout. They are recorded as executed work at the end of this document rather than as forward-looking task blocks, because writing them as untried steps would misrepresent what has already been run and committed.
 
 ---
 
@@ -8159,3 +8164,258 @@ confirm the logged-out refresh token is dead."
 ```
 
 ---
+
+## Tasks 14–18: executed after the original plan
+
+The scope changed twice after Tasks 1–13 shipped: the catalog was deferred to
+"authentication only, but users must still see products without logging in",
+and then reinstated as "catalog repair and product listing, checkout etc". What
+follows records what was built, the decisions that were not obvious, and the
+commit that carries each. Every task ended with `./mvnw clean verify` green.
+
+### Task 14: Repair the product detail endpoint — `8d9b72c`
+
+**Files:** `catalog/ProductService.java`, `catalog/ProductMapper.java`,
+`catalog/dto/ProductDto.java`, `catalog/ProductControllerIT.java` (9 ITs),
+`catalog/ProductMapperTest.java` (5 tests), `catalog/SchemaBaselineIT.java` (4 ITs).
+
+Four defects, the fourth found while planning and recorded in the Deviations
+section above:
+
+1. The thumbnail was rendered by calling `toString()` on an `Optional`, so
+   clients received the literal string `Optional[https://…]`.
+2. Variants and resources were absent from the response.
+3. A missing id produced a 500 rather than a 404.
+4. `getProductById` walked four lazy associations outside a transaction. With
+   `open-in-view=false` this throws `LazyInitializationException` on the first
+   real request, so the method is now `@Transactional(readOnly = true)`.
+
+`SchemaBaselineIT` guards the schema itself: every table is present and every
+primary key is a UUID. It uses `contains`, not `containsExactly`, so later
+migrations add tables without breaking it — and it validated `carts`,
+`cart_items`, `orders` and `order_items` for free when those arrived.
+
+### Task 15: Product listing and category navigation — `ef6fcdc`
+
+**Files:** `catalog/ProductController.java`, `catalog/ProductService.java`,
+`catalog/CategoryController.java`, `catalog/CategoryService.java`,
+`catalog/dto/ProductSummaryResponse.java`, `common/PageResponse.java`,
+`catalog/ProductListingIT.java` (19 ITs), `catalog/CategoryControllerIT.java` (3 ITs).
+
+`GET /api/products` pages, filters by category and category type, searches by
+name, and sorts. `GET /api/categories` returns categories with their types for
+navigation. Both stay `permitAll()`; this is the requirement that must never
+regress, and `ShoppingJourneyIT` (Task 18) asserts it from an unauthenticated
+client.
+
+Decisions worth keeping:
+
+- `PageResponse` exists because returning Spring Data's `Page` from a controller
+  ships an unstable JSON shape and makes Boot log a warning. The record pins the
+  contract.
+- The summary DTO deliberately omits `variants`, so a listing page never triggers
+  a per-row collection fetch.
+- `@Min`/`@Max` on `@RequestParam` raise `HandlerMethodValidationException`, not
+  `ConstraintViolationException` — Spring Framework 6.1 changed this. Without the
+  dedicated handler added in Task 4's advice, an out-of-range page size leaves as
+  a 500.
+
+### Task 16: Server-side cart — `32deeda`
+
+**Files:** `db/migration/V3__cart.sql`, `commerce/entity/Cart.java`,
+`commerce/entity/CartItem.java`, `commerce/CartService.java`,
+`commerce/CartController.java`, `commerce/repository/CartRepository.java`,
+`commerce/repository/CartItemRepository.java`, four DTOs,
+`common/InsufficientStockException.java`, `commerce/CartControllerIT.java` (22 ITs).
+
+Four decisions were taken with the user before any code:
+
+| Decision | Choice |
+|---|---|
+| Payment | Simulated, behind a `PaymentGateway` interface |
+| Cart | Server-side and persisted |
+| Guest checkout | Login required to check out; browsing stays public |
+| Stock | Decremented when the order is placed, with row locking |
+
+Schema notes, both recorded in the migration itself: a cart line references a
+**variant**, because that is where stock lives; and there is **no price column**,
+because prices are re-read at placement.
+
+- `POST /items` takes units *to add* and merges into an existing line;
+  `PATCH /items/{id}` takes the new total. Zero is rejected there because
+  removal is a `DELETE`, not a quantity.
+- Reading an empty cart must not create a row. `CartControllerIT` asserts
+  `SELECT count(*) FROM carts` is still 0 after a `GET`.
+- Lines sort by `createdAt` then `id`, so a cart does not reshuffle between
+  requests.
+- Thumbnails for the whole cart come from one batched query, not one per line.
+- Another user's cart line answers **404, not 403**, so existence is not
+  disclosed — the same rule the addresses already followed.
+
+### Task 17: Checkout and order history — `2cb58e1`
+
+**Files:** `db/migration/V4__orders.sql`, `commerce/entity/Order.java`,
+`OrderItem.java`, `OrderStatus.java`, `ShippingAddressSnapshot.java`,
+`commerce/OrderService.java`, `OrderController.java`, `OrderNumberGenerator.java`,
+`commerce/payment/{PaymentGateway,PaymentResult,SimulatedPaymentGateway}.java`,
+`commerce/repository/OrderRepository.java`, six DTOs,
+`common/{InvalidOrderStateException,PaymentDeclinedException}.java`,
+`commerce/OrderCheckoutIT.java` (28 ITs), `commerce/OrderConcurrencyIT.java` (1 IT).
+
+`POST /api/me/orders` places, `POST /{id}/pay` pays, `POST /{id}/cancel` cancels
+and restocks. Legal transitions are `PENDING_PAYMENT → PAID` and
+`PENDING_PAYMENT → CANCELLED`; a paid order cannot be cancelled, because
+reversing a completed sale is a refund and that is a later slice.
+
+**The oversell hole, and the two guards against it.** `SELECT … FOR UPDATE`
+takes the row lock, but if the `ProductVariant` is *already* in the persistence
+context Hibernate serves its cached copy and discards the freshly locked row.
+Two concurrent checkouts would both read the stale stock, both pass the check,
+and the shop would oversell. So:
+
+- `CartItemRepository.findCheckoutLines` returns a **scalar projection**, never
+  `ProductVariant` entities.
+- `OrderItem.productId` / `variantId` are **plain UUID columns**, not
+  associations, so reading an order never pulls variants into the context. They
+  are also `ON DELETE SET NULL`: withdrawing a product must never delete the
+  record that it was once sold.
+
+`OrderConcurrencyIT` proves the lock is load-bearing rather than decorative. Two
+threads race for the last unit through the service proxy (not MockMvc, which is
+not worth sharing across threads), and exactly one must win. Deleting the
+`@Lock` was tried: the test fails with two `PLACED` results, a genuine oversell.
+A concurrency test that passes with and without the lock proves nothing, so this
+check is part of the record.
+
+Other decisions:
+
+- **`currency` is `varchar(3)` with a `char_length = 3` check, not `char(3)`.**
+  Postgres reports `char` as `bpchar` (`Types#CHAR`) while a Java `String` maps
+  to `Types#VARCHAR`, and `ddl-auto=validate` rejects the mismatch. This is a
+  deliberate deviation from the design doc's `char(3)`.
+- **`@Table(name = "orders")` is mandatory** — `order` is a reserved SQL word.
+- Order lines carry a persisted `line_number` with `UNIQUE (order_id, line_number)`.
+  A bag comes back in arbitrary order, and sorting by `createdAt` with a random
+  UUID tiebreaker gives an arbitrary sequence on a timestamp tie.
+- `OrderRepository.findByUserId(UUID, Pageable)` deliberately has **no** entity
+  graph: a collection fetch plus `Pageable` paginates in memory. `OrderSummaryResponse`
+  therefore carries no lines.
+- The bulk cart delete is `@Modifying(flushAutomatically = true)` but **not**
+  `clearAutomatically`. The flush pushes the order insert and the stock
+  decrements ahead of the delete; clearing would detach the locked, dirty
+  `ProductVariant` instances and throw the decrements away.
+- Orders snapshot the shipping address and the product names and prices, so
+  editing an address or repricing a product never rewrites history.
+- `order_number` is random Crockford base32 (`ORD-` + 12 chars, 60 bits), not a
+  sequence, so order volume is not public. Generation retries against
+  `existsByOrderNumber` and gives up after five attempts.
+- Payment tokens are never persisted and never logged; card details never reach
+  the application. `SimulatedPaymentGateway` declines exactly one input,
+  `tok_declined`, and approves everything else.
+- `lockAllByIdIn` carries `order by variant.id` as a total lock order, so two
+  orders sharing two variants cannot deadlock by locking them in opposite orders.
+
+### Task 18: OpenAPI document and acceptance-criteria coverage — `1b27b8b`
+
+**Files:** `config/OpenApiConfig.java`, `@SecurityRequirement` on the four
+authenticated controllers and on `POST /auth/logout`,
+`config/OpenApiIT.java` (8 ITs), `common/ProblemResponseIT.java` (9 ITs),
+`config/JwtSecretBootstrapTest.java` (3 tests),
+`commerce/ShoppingJourneyIT.java` (1 IT).
+
+The bearer scheme is declared once in `OpenApiConfig` but applied **per
+endpoint**, not globally. Which endpoints need a token is a security fact worth
+stating exactly: browsing the catalogue shows no lock at all, and the document
+therefore agrees with the filter chain.
+
+Four tests that check the acceptance criteria as claims rather than as side
+effects of feature tests:
+
+- `OpenApiIT` asserts the **exact** 19-path inventory, so adding a controller
+  method without documenting it fails the build.
+- `ProblemResponseIT` sweeps one error of every status the API returns and checks
+  three things about all of them: the content type, the RFC 7807 members, and
+  that no exception class, package name or stack frame reaches the client.
+- `JwtSecretBootstrapTest` proves a weak or absent secret **stops the context
+  starting**. `JwtPropertiesTest` only proved the annotations are on the record;
+  those are different claims and only the first one is the acceptance criterion.
+  It is driven with `ApplicationContextRunner` rather than by booting the `prod`
+  profile, because a real prod boot also demands database credentials and would
+  fail for the wrong reason — which would make the test pass while proving nothing.
+- `ShoppingJourneyIT` walks browse-anonymously through to a paid order over HTTP,
+  proving the listing, cart, address, checkout and payment endpoints compose.
+
+One finding: problem bodies carry **no `type` member**. Spring omits it while it
+equals the RFC 7807 default of `about:blank`, which the spec permits. Errors are
+told apart by status and title. Adding a `type` URI namespace would be a design
+change, not a fix, so it was left alone.
+
+---
+
+## Acceptance criteria verification
+
+All eight criteria from §12 of the design doc, and how each was checked.
+
+| # | Criterion | Verified by | Result |
+|---|---|---|---|
+| 1 | `./mvnw verify` passes with all tests green | `./mvnw clean verify` | 37 unit + 213 integration tests, `BUILD SUCCESS` |
+| 2 | `docker compose up` then application start yields a fully migrated schema on an empty database | Run for real: compose Postgres 16 on a fresh volume, then the built jar | Flyway applied V1–V4 to an empty schema, 17 tables, `/actuator/health` `UP` |
+| 3 | A new user can register, log in, read `/api/me`, add an address, refresh, and log out | `CustomerJourneyIT` (2 ITs) | Pass, including the logged-out refresh token being dead |
+| 4 | No credentials or secrets appear anywhere in committed files | `git ls-files` swept for secret-shaped assignments; `.env` gitignored, `.env.example` placeholders only | Clean. The one committed key is the test-suite JWT secret, which signs tokens only inside the suite and is commented as such |
+| 5 | Starting the `prod` profile without a valid `JWT_SECRET` fails at boot | `JwtSecretBootstrapTest` (3 tests) | Context fails to start with no secret and with one under 32 characters |
+| 6 | All endpoints appear in OpenAPI at `/swagger-ui` | `OpenApiIT` (8 ITs), plus a live `curl` of `/v3/api-docs` | All 19 paths present; `/swagger-ui` reachable anonymously |
+| 7 | Every error response is `application/problem+json` | `ProblemResponseIT` (9 ITs) across 400/401/403/404/409, plus 402 in `OrderCheckoutIT` and 429 in `RateLimitIT` | Pass; nothing internal leaks into any body |
+| 8 | `GET /api/products/{id}` returns correct data against a seeded product | `ProductControllerIT` (9 ITs), `ProductMapperTest` (5 tests) | Pass, including the repaired thumbnail |
+
+### Residual gaps
+
+- Criterion 2 was verified with the compose Postgres and the packaged jar on this
+  machine. The application itself is not containerised, so there is no
+  single-command `docker compose up` that starts the API too. That belongs to the
+  Ops slice.
+- Everything in §13 of the design doc ("Deferred, with reasons") is still
+  deferred, unchanged: Redis-backed rate limiting, a real email provider, email
+  verification gating login, and access token revocation.
+- Admin catalog CRUD does not exist. `hasRole("ADMIN")` guards `/api/admin/**`
+  and is tested, but nothing is mapped under it yet, so products can only be
+  created through a test factory or SQL.
+- Refunds are out of scope, which is why a paid order cannot be cancelled.
+
+---
+
+## Self-Review
+
+Checked with fresh eyes against the design doc after Task 18.
+
+**Spec coverage.** Every section of the design doc maps to a task, and all eight
+acceptance criteria are verified above. The catalog work the doc deferred to
+"Slice 2" (listing, cart, checkout) was pulled forward at the user's request and
+is done; admin CRUD, search relevance ranking and image upload are not.
+
+**Type consistency.** Names used across tasks agree: `PageResponse.of(Page, List)`
+is the single pagination wrapper used by both product listing and order history;
+`InsufficientStockException` is raised by both `CartService` and `OrderService`
+and mapped once, to 409; `findByIdAndUserId` is the ownership idiom in addresses,
+cart lines and orders alike, and all three answer 404 rather than 403.
+
+**Where the plan was not followed.** Tasks 16 and 17 did not run the full
+red-green cycle. The tests and the implementations were written together and
+passed on first run — `CartControllerIT` 22/22, `OrderCheckoutIT` 28/28 — so the
+"run it and confirm the predicted failure" step never happened for those two
+slices. That is a real deviation from this plan's own method, not a detail. The
+compensating check is `OrderConcurrencyIT`, where the lock was actually removed
+to confirm the test fails without it. The same confirmation has *not* been done
+for the other checkout invariants.
+
+---
+
+## Status
+
+This plan was executed inline, task by task, rather than by dispatching a
+subagent per task. Commits on `main`, oldest first:
+
+`542490a` this plan · `05a9ad4` Task 1 · `140787f` Task 2 · `5d119eb` Task 3 ·
+`b43fa4e` Task 4 · `ccbd126` Task 5 · `e478693` Task 6 · `209c490` Task 7 ·
+`d96c915` Task 8 · `4c8cf7d` Task 9 · `7d637aa` Task 10 · `29b857a` Task 11 ·
+`e9874c2` Task 12 · `006e469` Task 13 · `8d9b72c` Task 14 · `ef6fcdc` Task 15 ·
+`32deeda` Task 16 · `2cb58e1` Task 17 · `1b27b8b` Task 18
