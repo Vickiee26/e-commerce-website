@@ -38,6 +38,7 @@ Every task's requirements implicitly include this section.
 - **Boot 4 split the test slices per technology.** `@AutoConfigureMockMvc` and `@WebMvcTest` are no longer in `spring-boot-test-autoconfigure`; they live in `spring-boot-webmvc-test` under the package **`org.springframework.boot.webmvc.test.autoconfigure`**. Declare `org.springframework.boot:spring-boot-starter-webmvc-test` (BOM-managed, test scope) — verified against the 4.1.0 jar. `@SpringBootTest` and `@TestConfiguration` are unchanged at `org.springframework.boot.test.context.*`.
 - **Boot 4 moved Flyway autoconfiguration into its own module.** `FlywayAutoConfiguration` is in `spring-boot-flyway`, not `spring-boot-autoconfigure`. Declaring `flyway-core` alone puts Flyway on the classpath but never runs it, and `ddl-auto=validate` then fails with `missing table [categories]`. Declare `org.springframework.boot:spring-boot-starter-flyway` (BOM-managed) **instead of** `flyway-core`, plus `org.flywaydb:flyway-database-postgresql`.
 - **Jackson 3 is the auto-configured mapper.** Boot 4 registers a `tools.jackson.databind.json.JsonMapper` bean (a subclass of `tools.jackson.databind.ObjectMapper`). Jackson 2 (`com.fasterxml.jackson.*`) is still on the classpath transitively via jjwt-jackson and springdoc, but **has no bean** — injecting `com.fasterxml.jackson.databind.ObjectMapper` fails with `NoSuchBeanDefinitionException`. Every `ObjectMapper`/`JsonNode` in this plan is the **`tools.jackson.databind`** one.
+- **pgjdbc cannot bind a `java.time.Instant` parameter.** `jdbcTemplate.update("… SET expires_at = ?", someInstant)` fails with `Can't infer the SQL type to use for an instance of java.time.Instant`. The driver maps `OffsetDateTime`/`LocalDateTime`, not `Instant`. Pass `instant.atOffset(ZoneOffset.UTC)` for a `timestamptz` column. Reading is unaffected: `queryForObject(sql, Instant.class)` works, because Spring converts the result rather than the parameter.
 - **Never pass a lazy association into an AssertJ assertion from a test method.** `open-in-view=false` and no test-level transaction mean every entity a repository returns is detached, so a `FetchType.LAZY` `@ManyToOne` getter yields an uninitialised proxy. Merely holding it is fine, but AssertJ renders the *actual* value when an assertion fails, and rendering calls `toString()` on the proxy — you get `LazyInitializationException: Could not initialize proxy … no session` where you expected a readable assertion failure. Assert on the FK column with `jdbcTemplate.queryForList("SELECT user_id FROM …")` instead.
 
 ---
@@ -5648,6 +5649,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -5847,8 +5849,11 @@ class PasswordResetIT extends AbstractIntegrationTest {
         testData.createCustomer("ada@example.com", OLD_PASSWORD);
         requestReset("ada@example.com");
         String token = emailSender.sent.get(0).rawToken();
+        // Bind an OffsetDateTime, not an Instant: pgjdbc has no parameter mapping for Instant and
+        // fails with "Can't infer the SQL type to use for an instance of java.time.Instant". Reading
+        // a timestamptz back into an Instant is fine — Spring converts on the way out, not in.
         jdbcTemplate.update("UPDATE password_reset_tokens SET expires_at = ?",
-                Instant.now().minus(1, ChronoUnit.MINUTES));
+                Instant.now().minus(1, ChronoUnit.MINUTES).atOffset(ZoneOffset.UTC));
 
         confirmReset(token, NEW_PASSWORD)
                 .andExpect(status().isUnauthorized())
