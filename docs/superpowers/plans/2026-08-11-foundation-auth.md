@@ -6896,7 +6896,7 @@ class MeControllerIT extends AbstractIntegrationTest {
 ./mvnw -q verify -Dit.test=MeControllerIT -DfailIfNoTests=false
 ```
 
-Expected: FAIL — `GET /api/me` returns 401 for an authenticated caller too, because no handler is mapped and the request never reaches one.
+Expected: FAIL — 12 of 13 tests fail with "Status expected:<200> but was:<500>" (or 400/404 where those were expected). No handler is mapped for `/api/me`, so an authenticated request falls through to the static-resource handler and raises `NoResourceFoundException: No static resource api/me` — a **500**, not the 401 or 404 you might expect. `requiresAuthentication` already passes, because `anyRequest().authenticated()` rejects the anonymous calls before routing.
 
 - [ ] **Step 3: Write the DTOs**
 
