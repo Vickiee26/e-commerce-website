@@ -40,7 +40,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                     TokenService tokenService,
-                                                    ProblemResponseWriter problemResponseWriter)
+                                                    ProblemResponseWriter problemResponseWriter,
+                                                    RateLimitProperties rateLimitProperties)
             throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -68,7 +69,11 @@ public class SecurityConfig {
                         .authenticationEntryPoint(problemResponseWriter)
                         .accessDeniedHandler(problemResponseWriter))
                 .addFilterBefore(new JwtAuthenticationFilter(tokenService, problemResponseWriter),
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                // Anchored on the JWT filter rather than a position, so throttling provably runs
+                // before any authentication work.
+                .addFilterBefore(new RateLimitFilter(rateLimitProperties, problemResponseWriter),
+                        JwtAuthenticationFilter.class);
 
         return http.build();
     }

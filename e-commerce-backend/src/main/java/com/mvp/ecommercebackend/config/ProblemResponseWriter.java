@@ -2,6 +2,7 @@ package com.mvp.ecommercebackend.config;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -47,6 +48,14 @@ public class ProblemResponseWriter implements AuthenticationEntryPoint, AccessDe
             throws IOException {
         write(request, response, HttpStatus.UNAUTHORIZED, "Unauthorized",
                 "Access token is not valid");
+    }
+
+    /** Used by {@link RateLimitFilter}, which also rejects before any controller runs. */
+    public void writeTooManyRequests(HttpServletRequest request, HttpServletResponse response,
+                                      long retryAfterSeconds) throws IOException {
+        response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
+        write(request, response, HttpStatus.TOO_MANY_REQUESTS, "Too many requests",
+                "Too many requests. Try again in " + retryAfterSeconds + " seconds.");
     }
 
     private void write(HttpServletRequest request, HttpServletResponse response,
