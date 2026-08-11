@@ -7109,3 +7109,1053 @@ body are ignored rather than honoured."
 ```
 
 ---
+
+### Task 13: Addresses
+
+The four `/api/me/addresses` endpoints, plus the end-to-end journey that acceptance criterion 3 names.
+
+**Ownership is expressed as a query, not a check.** Every lookup is `findByIdAndUserId`, so another user's address is indistinguishable from one that never existed and both answer **404**. A 403 would confirm the id is real, which is exactly what the design forbids. Making it a query rather than an `if` means a future endpoint cannot forget the check.
+
+**Default flags:** at most one default shipping and one default billing address per user. Promoting one demotes the previous holder. Deleting the default does not promote a replacement — the client chooses. Flags are only ever set explicitly; a first address is not silently made default.
+
+**Files:**
+- Create: `src/main/java/com/mvp/ecommercebackend/user/entity/Address.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/repository/AddressRepository.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/dto/AddressResponse.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/dto/CreateAddressRequest.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/dto/UpdateAddressRequest.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/AddressService.java`
+- Create: `src/main/java/com/mvp/ecommercebackend/user/AddressController.java`
+- Test: `src/test/java/com/mvp/ecommercebackend/user/AddressControllerIT.java`
+- Test: `src/test/java/com/mvp/ecommercebackend/auth/CustomerJourneyIT.java`
+
+**Interfaces:**
+- Consumes: `UserService.requireUser(UUID)` (package-visible, from Task 12), `AuthenticatedUser`, `ResourceNotFoundException`.
+- Produces:
+  - `AddressResponse(UUID id, String recipientName, String phone, String line1, String line2, String city, String state, String postalCode, String country, boolean defaultShipping, boolean defaultBilling, Instant createdAt)`
+  - `AddressService` — `List<AddressResponse> list(UUID userId)`, `AddressResponse create(UUID userId, CreateAddressRequest request)`, `AddressResponse update(UUID userId, UUID addressId, UpdateAddressRequest request)`, `void delete(UUID userId, UUID addressId)`
+  - `GET /api/me/addresses` → 200, `POST` → 201 + `Location`, `PATCH /{id}` → 200, `DELETE /{id}` → 204. All authenticated.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `src/test/java/com/mvp/ecommercebackend/user/AddressControllerIT.java`:
+
+```java
+package com.mvp.ecommercebackend.user;
+
+import com.mvp.ecommercebackend.auth.TokenService;
+import com.mvp.ecommercebackend.auth.entity.User;
+import com.mvp.ecommercebackend.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+class AddressControllerIT extends AbstractIntegrationTest {
+
+    private static final String PROBLEM_JSON = "application/problem+json";
+
+    private static final String COMPLETE_ADDRESS = """
+            {"recipientName":"Ada Lovelace","phone":"+15550100","line1":"12 Analytical Way",
+             "line2":"Flat 3","city":"London","state":"Greater London","postalCode":"E1 6AN",
+             "country":"GB"}
+            """;
+
+    @Autowired
+    private TokenService tokenService;
+
+    private String bearer(User user) {
+        return "Bearer " + tokenService.generateAccessToken(user);
+    }
+
+    /** Creates an address over HTTP and returns its id, so tests exercise the real path. */
+    private UUID createAddress(User user, String body) throws Exception {
+        String location = mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getHeader(HttpHeaders.LOCATION);
+
+        return UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
+    }
+
+    @Test
+    void requiresAuthenticationOnEveryAddressEndpoint() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/api/me/addresses"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+        mockMvc.perform(post("/api/me/addresses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE_ADDRESS))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/me/addresses/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"city":"Paris"}
+                                """))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/me/addresses/" + id))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void createsAnAddressAndReturnsItWithALocationHeader() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE_ADDRESS))
+                .andExpect(status().isCreated())
+                .andExpect(header().exists(HttpHeaders.LOCATION))
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.recipientName").value("Ada Lovelace"))
+                .andExpect(jsonPath("$.line1").value("12 Analytical Way"))
+                .andExpect(jsonPath("$.line2").value("Flat 3"))
+                .andExpect(jsonPath("$.city").value("London"))
+                .andExpect(jsonPath("$.postalCode").value("E1 6AN"))
+                .andExpect(jsonPath("$.country").value("GB"))
+                .andExpect(jsonPath("$.defaultShipping").value(false))
+                .andExpect(jsonPath("$.defaultBilling").value(false))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty());
+
+        // The response must not carry the owner's id: it is implied by the token.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM addresses WHERE user_id = ?", Integer.class, user.getId()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void rejectsAnAddressMissingRequiredFields() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"+15550100"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+                .andExpect(jsonPath("$.errors[?(@.field == 'recipientName')]").exists())
+                .andExpect(jsonPath("$.errors[?(@.field == 'line1')]").exists())
+                .andExpect(jsonPath("$.errors[?(@.field == 'city')]").exists())
+                .andExpect(jsonPath("$.errors[?(@.field == 'postalCode')]").exists())
+                .andExpect(jsonPath("$.errors[?(@.field == 'country')]").exists());
+    }
+
+    @Test
+    void rejectsACountryThatIsNotATwoLetterCode() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE_ADDRESS.replace("\"GB\"", "\"United Kingdom\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.field == 'country')]").exists());
+    }
+
+    @Test
+    void storesTheCountryInUppercase() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE_ADDRESS.replace("\"GB\"", "\"gb\"")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.country").value("GB"));
+    }
+
+    @Test
+    void rejectsAnOverlongPostalCode() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE_ADDRESS.replace("\"E1 6AN\"", "\"" + "9".repeat(21) + "\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.field == 'postalCode')]").exists());
+    }
+
+    @Test
+    void returnsAnEmptyListWhenTheCallerHasNoAddresses() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(get("/api/me/addresses").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void listsOnlyTheCallersOwnAddresses() throws Exception {
+        User ada = testData.createCustomer("ada@example.com", "Password1!x");
+        User grace = testData.createCustomer("grace@example.com", "Password1!x");
+        createAddress(ada, COMPLETE_ADDRESS);
+        createAddress(grace, COMPLETE_ADDRESS.replace("Ada Lovelace", "Grace Hopper"));
+
+        mockMvc.perform(get("/api/me/addresses").header(HttpHeaders.AUTHORIZATION, bearer(ada)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].recipientName").value("Ada Lovelace"));
+    }
+
+    @Test
+    void updatesOnlyTheSuppliedFields() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID id = createAddress(user, COMPLETE_ADDRESS);
+
+        mockMvc.perform(patch("/api/me/addresses/" + id)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"city":"Manchester"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.city").value("Manchester"))
+                .andExpect(jsonPath("$.line1").value("12 Analytical Way"))
+                .andExpect(jsonPath("$.recipientName").value("Ada Lovelace"));
+    }
+
+    @Test
+    void clearsAnOptionalFieldGivenAnEmptyString() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID id = createAddress(user, COMPLETE_ADDRESS);
+
+        mockMvc.perform(patch("/api/me/addresses/" + id)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"line2":""}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.line2").doesNotExist());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT line2 FROM addresses WHERE id = ?", String.class, id)).isNull();
+    }
+
+    @Test
+    void rejectsBlankingARequiredFieldOnUpdate() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID id = createAddress(user, COMPLETE_ADDRESS);
+
+        mockMvc.perform(patch("/api/me/addresses/" + id)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"line1":"   "}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[?(@.field == 'line1')]").exists());
+    }
+
+    @Test
+    void deletesTheCallersOwnAddress() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID id = createAddress(user, COMPLETE_ADDRESS);
+
+        mockMvc.perform(delete("/api/me/addresses/" + id)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/me/addresses").header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void answersNotFoundRatherThanForbiddenForAnotherUsersAddress() throws Exception {
+        User ada = testData.createCustomer("ada@example.com", "Password1!x");
+        User grace = testData.createCustomer("grace@example.com", "Password1!x");
+        UUID gracesAddress = createAddress(grace, COMPLETE_ADDRESS);
+
+        // 404, not 403: a 403 would confirm the id exists.
+        mockMvc.perform(patch("/api/me/addresses/" + gracesAddress)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ada))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"city":"Hijacked"}
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Not found"));
+
+        mockMvc.perform(delete("/api/me/addresses/" + gracesAddress)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(ada)))
+                .andExpect(status().isNotFound());
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT city FROM addresses WHERE id = ?", gracesAddress);
+        assertThat(row.get("city")).isEqualTo("London");
+    }
+
+    @Test
+    void answersNotFoundForAnUnknownAddressId() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(delete("/api/me/addresses/" + UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void keepsAtMostOneDefaultShippingAddress() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID first = createAddress(user,
+                COMPLETE_ADDRESS.replace("\"country\":\"GB\"",
+                        "\"country\":\"GB\",\"defaultShipping\":true"));
+        UUID second = createAddress(user, COMPLETE_ADDRESS.replace("Flat 3", "Flat 4"));
+
+        mockMvc.perform(patch("/api/me/addresses/" + second)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"defaultShipping":true}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultShipping").value(true));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_default_shipping FROM addresses WHERE id = ?", Boolean.class, first))
+                .isFalse();
+    }
+
+    @Test
+    void treatsShippingAndBillingDefaultsIndependently() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+        UUID shipping = createAddress(user,
+                COMPLETE_ADDRESS.replace("\"country\":\"GB\"",
+                        "\"country\":\"GB\",\"defaultShipping\":true"));
+        UUID billing = createAddress(user,
+                COMPLETE_ADDRESS.replace("\"country\":\"GB\"",
+                        "\"country\":\"GB\",\"defaultBilling\":true"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_default_shipping FROM addresses WHERE id = ?", Boolean.class, shipping))
+                .isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_default_billing FROM addresses WHERE id = ?", Boolean.class, billing))
+                .isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT is_default_billing FROM addresses WHERE id = ?", Boolean.class, shipping))
+                .isFalse();
+    }
+
+    @Test
+    void rejectsAMalformedAddressId() throws Exception {
+        User user = testData.createCustomer("ada@example.com", "Password1!x");
+
+        mockMvc.perform(delete("/api/me/addresses/not-a-uuid")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+./mvnw verify -Dit.test=AddressControllerIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false
+```
+
+Expected: FAIL — 16 of 17 tests fail. As in Tasks 8 and 12, an authenticated request to an unmapped path falls through to the static-resource handler and surfaces as **500**, not 404. `requiresAuthenticationOnEveryAddressEndpoint` already passes.
+
+- [ ] **Step 3: Write the `Address` entity**
+
+Create `src/main/java/com/mvp/ecommercebackend/user/entity/Address.java`:
+
+```java
+package com.mvp.ecommercebackend.user.entity;
+
+import com.mvp.ecommercebackend.auth.entity.User;
+import com.mvp.ecommercebackend.common.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * A shipping or billing address belonging to exactly one user.
+ *
+ * <p>The owner is a LAZY association: it is needed to write the foreign key and to scope queries,
+ * never to render a response, so there is no reason to load the row.
+ */
+@Entity
+@Table(name = "addresses")
+@Getter
+@Setter
+public class Address extends BaseEntity {
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false, updatable = false)
+    private User user;
+
+    @Column(name = "recipient_name", nullable = false)
+    private String recipientName;
+
+    @Column(name = "phone", length = 30)
+    private String phone;
+
+    @Column(name = "line1", nullable = false)
+    private String line1;
+
+    @Column(name = "line2")
+    private String line2;
+
+    @Column(name = "city", nullable = false, length = 120)
+    private String city;
+
+    @Column(name = "state", length = 120)
+    private String state;
+
+    @Column(name = "postal_code", nullable = false, length = 20)
+    private String postalCode;
+
+    /** ISO 3166-1 alpha-2, stored uppercase. */
+    @Column(name = "country", nullable = false, length = 2)
+    private String country;
+
+    @Column(name = "is_default_shipping", nullable = false)
+    private boolean defaultShipping;
+
+    @Column(name = "is_default_billing", nullable = false)
+    private boolean defaultBilling;
+}
+```
+
+- [ ] **Step 4: Write the repository**
+
+Create `src/main/java/com/mvp/ecommercebackend/user/repository/AddressRepository.java`:
+
+```java
+package com.mvp.ecommercebackend.user.repository;
+
+import com.mvp.ecommercebackend.user.entity.Address;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface AddressRepository extends JpaRepository<Address, UUID> {
+
+    List<Address> findByUserIdOrderByCreatedAtAsc(UUID userId);
+
+    /**
+     * The single lookup every endpoint uses. Scoping by owner in the query rather than checking
+     * afterwards means a caller cannot reach another user's row at all, so the "not yours" and
+     * "does not exist" cases are the same empty Optional — and therefore the same 404.
+     */
+    Optional<Address> findByIdAndUserId(UUID id, UUID userId);
+}
+```
+
+- [ ] **Step 5: Write the DTOs**
+
+Create `src/main/java/com/mvp/ecommercebackend/user/dto/AddressResponse.java`:
+
+```java
+package com.mvp.ecommercebackend.user.dto;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * An address as its owner sees it. Deliberately carries no user id: the owner is always the caller,
+ * so echoing it back would only invite a client to treat it as a parameter.
+ */
+public record AddressResponse(
+        UUID id,
+        String recipientName,
+        String phone,
+        String line1,
+        String line2,
+        String city,
+        String state,
+        String postalCode,
+        String country,
+        boolean defaultShipping,
+        boolean defaultBilling,
+        Instant createdAt) {
+}
+```
+
+Create `src/main/java/com/mvp/ecommercebackend/user/dto/CreateAddressRequest.java`:
+
+```java
+package com.mvp.ecommercebackend.user.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+/**
+ * Every {@code @Size} matches the column width in {@code V1__init.sql}, so an overlong value is a
+ * 400 rather than a 500 from the database.
+ *
+ * <p>The two default flags are {@code Boolean} rather than {@code boolean} so that omitting them is
+ * distinguishable from sending {@code false}; both are treated as "not a default".
+ */
+public record CreateAddressRequest(
+
+        @NotBlank(message = "must not be blank")
+        @Size(max = 255, message = "must be at most 255 characters")
+        String recipientName,
+
+        @Size(max = 30, message = "must be at most 30 characters")
+        String phone,
+
+        @NotBlank(message = "must not be blank")
+        @Size(max = 255, message = "must be at most 255 characters")
+        String line1,
+
+        @Size(max = 255, message = "must be at most 255 characters")
+        String line2,
+
+        @NotBlank(message = "must not be blank")
+        @Size(max = 120, message = "must be at most 120 characters")
+        String city,
+
+        @Size(max = 120, message = "must be at most 120 characters")
+        String state,
+
+        @NotBlank(message = "must not be blank")
+        @Size(max = 20, message = "must be at most 20 characters")
+        String postalCode,
+
+        @NotBlank(message = "must not be blank")
+        @Pattern(regexp = "^[A-Za-z]{2}$", message = "must be a two-letter ISO country code")
+        String country,
+
+        Boolean defaultShipping,
+
+        Boolean defaultBilling) {
+}
+```
+
+Create `src/main/java/com/mvp/ecommercebackend/user/dto/UpdateAddressRequest.java`:
+
+```java
+package com.mvp.ecommercebackend.user.dto;
+
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+/**
+ * A partial update: every field is optional, and {@code null} means "leave unchanged".
+ *
+ * <p>The mandatory fields use {@code @Pattern} rather than {@code @NotBlank} because both ignore
+ * null but only the pattern rejects an all-whitespace value while still allowing omission. The
+ * optional fields accept an empty string, which clears them.
+ */
+public record UpdateAddressRequest(
+
+        @Size(max = 255, message = "must be at most 255 characters")
+        @Pattern(regexp = ".*\\S.*", message = "must not be blank")
+        String recipientName,
+
+        @Size(max = 30, message = "must be at most 30 characters")
+        String phone,
+
+        @Size(max = 255, message = "must be at most 255 characters")
+        @Pattern(regexp = ".*\\S.*", message = "must not be blank")
+        String line1,
+
+        @Size(max = 255, message = "must be at most 255 characters")
+        String line2,
+
+        @Size(max = 120, message = "must be at most 120 characters")
+        @Pattern(regexp = ".*\\S.*", message = "must not be blank")
+        String city,
+
+        @Size(max = 120, message = "must be at most 120 characters")
+        String state,
+
+        @Size(max = 20, message = "must be at most 20 characters")
+        @Pattern(regexp = ".*\\S.*", message = "must not be blank")
+        String postalCode,
+
+        @Pattern(regexp = "^[A-Za-z]{2}$", message = "must be a two-letter ISO country code")
+        String country,
+
+        Boolean defaultShipping,
+
+        Boolean defaultBilling) {
+}
+```
+
+- [ ] **Step 6: Write `AddressService`**
+
+Create `src/main/java/com/mvp/ecommercebackend/user/AddressService.java`:
+
+```java
+package com.mvp.ecommercebackend.user;
+
+import com.mvp.ecommercebackend.common.ResourceNotFoundException;
+import com.mvp.ecommercebackend.user.dto.AddressResponse;
+import com.mvp.ecommercebackend.user.dto.CreateAddressRequest;
+import com.mvp.ecommercebackend.user.dto.UpdateAddressRequest;
+import com.mvp.ecommercebackend.user.entity.Address;
+import com.mvp.ecommercebackend.user.repository.AddressRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class AddressService {
+
+    private final AddressRepository addressRepository;
+    private final UserService userService;
+
+    public AddressService(AddressRepository addressRepository, UserService userService) {
+        this.addressRepository = addressRepository;
+        this.userService = userService;
+    }
+
+    @Transactional(readOnly = true)
+    public List<AddressResponse> list(UUID userId) {
+        return addressRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
+                .map(AddressService::toResponse)
+                .toList();
+    }
+
+    @Transactional
+    public AddressResponse create(UUID userId, CreateAddressRequest request) {
+        Address address = new Address();
+        // Goes through UserService, not UserRepository: a token naming a deleted user must not
+        // create an orphan row, and the cross-feature rule is service-to-service.
+        address.setUser(userService.requireUser(userId));
+        address.setRecipientName(request.recipientName().trim());
+        address.setPhone(blankToNull(request.phone()));
+        address.setLine1(request.line1().trim());
+        address.setLine2(blankToNull(request.line2()));
+        address.setCity(request.city().trim());
+        address.setState(blankToNull(request.state()));
+        address.setPostalCode(request.postalCode().trim());
+        address.setCountry(request.country().trim().toUpperCase());
+        address.setDefaultShipping(Boolean.TRUE.equals(request.defaultShipping()));
+        address.setDefaultBilling(Boolean.TRUE.equals(request.defaultBilling()));
+
+        Address saved = addressRepository.save(address);
+        demoteOtherDefaults(userId, saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public AddressResponse update(UUID userId, UUID addressId, UpdateAddressRequest request) {
+        Address address = requireOwnedAddress(userId, addressId);
+
+        if (request.recipientName() != null) {
+            address.setRecipientName(request.recipientName().trim());
+        }
+        if (request.phone() != null) {
+            address.setPhone(blankToNull(request.phone()));
+        }
+        if (request.line1() != null) {
+            address.setLine1(request.line1().trim());
+        }
+        if (request.line2() != null) {
+            address.setLine2(blankToNull(request.line2()));
+        }
+        if (request.city() != null) {
+            address.setCity(request.city().trim());
+        }
+        if (request.state() != null) {
+            address.setState(blankToNull(request.state()));
+        }
+        if (request.postalCode() != null) {
+            address.setPostalCode(request.postalCode().trim());
+        }
+        if (request.country() != null) {
+            address.setCountry(request.country().trim().toUpperCase());
+        }
+        if (request.defaultShipping() != null) {
+            address.setDefaultShipping(request.defaultShipping());
+        }
+        if (request.defaultBilling() != null) {
+            address.setDefaultBilling(request.defaultBilling());
+        }
+
+        Address saved = addressRepository.save(address);
+        demoteOtherDefaults(userId, saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID addressId) {
+        // Deleting the default does not promote a replacement: which address takes over is the
+        // owner's decision, not something to guess.
+        addressRepository.delete(requireOwnedAddress(userId, addressId));
+    }
+
+    private Address requireOwnedAddress(UUID userId, UUID addressId) {
+        return addressRepository.findByIdAndUserId(addressId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Address Not Found!"));
+    }
+
+    /**
+     * Enforces at most one default of each kind per user.
+     *
+     * <p>Done by mutating the loaded entities rather than with a bulk {@code @Modifying} update: a
+     * bulk update needs {@code clearAutomatically}, which would detach {@code promoted} and leave
+     * the response reading from a stale instance.
+     */
+    private void demoteOtherDefaults(UUID userId, Address promoted) {
+        if (!promoted.isDefaultShipping() && !promoted.isDefaultBilling()) {
+            return;
+        }
+
+        for (Address other : addressRepository.findByUserIdOrderByCreatedAtAsc(userId)) {
+            if (other.equals(promoted)) {
+                continue;
+            }
+            if (promoted.isDefaultShipping()) {
+                other.setDefaultShipping(false);
+            }
+            if (promoted.isDefaultBilling()) {
+                other.setDefaultBilling(false);
+            }
+        }
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static AddressResponse toResponse(Address address) {
+        return new AddressResponse(
+                address.getId(),
+                address.getRecipientName(),
+                address.getPhone(),
+                address.getLine1(),
+                address.getLine2(),
+                address.getCity(),
+                address.getState(),
+                address.getPostalCode(),
+                address.getCountry(),
+                address.isDefaultShipping(),
+                address.isDefaultBilling(),
+                address.getCreatedAt());
+    }
+}
+```
+
+- [ ] **Step 7: Write `AddressController`**
+
+Create `src/main/java/com/mvp/ecommercebackend/user/AddressController.java`:
+
+```java
+package com.mvp.ecommercebackend.user;
+
+import com.mvp.ecommercebackend.auth.AuthenticatedUser;
+import com.mvp.ecommercebackend.user.dto.AddressResponse;
+import com.mvp.ecommercebackend.user.dto.CreateAddressRequest;
+import com.mvp.ecommercebackend.user.dto.UpdateAddressRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The caller's own addresses, nested under {@code /api/me} for the same reason as the profile: the
+ * owner comes from the token, never from the path.
+ */
+@RestController
+@RequestMapping("/api/me/addresses")
+@Tag(name = "Addresses")
+@PreAuthorize("isAuthenticated()")
+public class AddressController {
+
+    private final AddressService addressService;
+
+    public AddressController(AddressService addressService) {
+        this.addressService = addressService;
+    }
+
+    @GetMapping
+    @Operation(summary = "List the authenticated user's addresses, oldest first")
+    public List<AddressResponse> list(@AuthenticationPrincipal AuthenticatedUser principal) {
+        return addressService.list(principal.id());
+    }
+
+    @PostMapping
+    @Operation(summary = "Create an address for the authenticated user")
+    public ResponseEntity<AddressResponse> create(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody CreateAddressRequest request) {
+        AddressResponse created = addressService.create(principal.id(), request);
+        return ResponseEntity.created(URI.create("/api/me/addresses/" + created.id())).body(created);
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(summary = "Update one of the authenticated user's addresses",
+            description = "Omitted or null fields are left unchanged. An empty string clears an "
+                    + "optional field. An address belonging to another user answers 404, not 403.")
+    public AddressResponse update(@AuthenticationPrincipal AuthenticatedUser principal,
+                                  @PathVariable UUID id,
+                                  @Valid @RequestBody UpdateAddressRequest request) {
+        return addressService.update(principal.id(), id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete one of the authenticated user's addresses")
+    public void delete(@AuthenticationPrincipal AuthenticatedUser principal,
+                       @PathVariable UUID id) {
+        addressService.delete(principal.id(), id);
+    }
+}
+```
+
+- [ ] **Step 8: Run the address test to verify it passes**
+
+```bash
+./mvnw verify -Dit.test=AddressControllerIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false
+```
+
+Expected: PASS, 17 tests.
+
+- [ ] **Step 9: Write the acceptance-criterion-3 journey test**
+
+Create `src/test/java/com/mvp/ecommercebackend/auth/CustomerJourneyIT.java`:
+
+```java
+package com.mvp.ecommercebackend.auth;
+
+import com.mvp.ecommercebackend.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Acceptance criterion 3, end to end and in one transaction-free sequence: a new customer can
+ * register, log in, read their profile, add an address, refresh, and log out — after which the
+ * refresh token they logged out with is dead.
+ *
+ * <p>Every step goes over HTTP. Nothing is set up through a repository, so this fails if any layer
+ * in the chain is wired wrongly, which is precisely what the per-feature tests cannot tell you.
+ */
+class CustomerJourneyIT extends AbstractIntegrationTest {
+
+    private String readJson(String body, String path) {
+        return com.jayway.jsonpath.JsonPath.read(body, path);
+    }
+
+    @Test
+    void newCustomerCanRegisterLogInReadTheProfileAddAnAddressRefreshAndLogOut() throws Exception {
+        // 1. Register. The response is a usable token pair, so no separate login is required.
+        String registration = mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"journey@example.com","password":"Password1!x",
+                                 "fullName":"Journey Customer","phone":"+15550142"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(readJson(registration, "$.refreshToken")).isNotBlank();
+
+        // 2. Log in with the same credentials, which must issue a second, independent pair.
+        String login = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"journey@example.com","password":"Password1!x"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        String accessToken = readJson(login, "$.accessToken");
+        String refreshToken = readJson(login, "$.refreshToken");
+        assertThat(refreshToken).isNotEqualTo(readJson(registration, "$.refreshToken"));
+
+        // 3. Read the profile with the access token.
+        mockMvc.perform(get("/api/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("journey@example.com"))
+                .andExpect(jsonPath("$.fullName").value("Journey Customer"))
+                .andExpect(jsonPath("$.roles").value("CUSTOMER"));
+
+        // 4. Add an address, then read it back through the list endpoint.
+        mockMvc.perform(post("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"recipientName":"Journey Customer","line1":"1 First Street",
+                                 "city":"Chennai","postalCode":"600001","country":"IN",
+                                 "defaultShipping":true}
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/me/addresses")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].city").value("Chennai"))
+                .andExpect(jsonPath("$[0].defaultShipping").value(true));
+
+        // 5. Refresh. The rotated pair must differ from the one presented.
+        String refreshed = mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}
+                                """.formatted(refreshToken)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        String rotatedAccess = readJson(refreshed, "$.accessToken");
+        String rotatedRefresh = readJson(refreshed, "$.refreshToken");
+        assertThat(rotatedRefresh).isNotEqualTo(refreshToken);
+
+        // The new access token works on a protected route.
+        mockMvc.perform(get("/api/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + rotatedAccess))
+                .andExpect(status().isOk());
+
+        // 6. Log out with the rotated refresh token.
+        mockMvc.perform(post("/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + rotatedAccess)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}
+                                """.formatted(rotatedRefresh)))
+                .andExpect(status().isNoContent());
+
+        // 7. That refresh token is now dead.
+        mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}
+                                """.formatted(rotatedRefresh)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void recordsTheWholeJourneyInTheAuditTrail() throws Exception {
+        String registration = mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"audited@example.com","password":"Password1!x",
+                                 "fullName":"Audited Customer"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        String refreshed = mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}
+                                """.formatted(readJson(registration, "$.refreshToken")))) 
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        mockMvc.perform(post("/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + readJson(refreshed, "$.accessToken"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}
+                                """.formatted(readJson(refreshed, "$.refreshToken"))))
+                .andExpect(status().isNoContent());
+
+        List<String> events = jdbcTemplate.queryForList(
+                "SELECT event_type FROM auth_events ORDER BY created_at", String.class);
+
+        assertThat(events).containsExactly("LOGIN_SUCCESS", "TOKEN_REFRESH", "LOGOUT");
+    }
+}
+```
+
+- [ ] **Step 10: Run the journey test to verify it passes**
+
+```bash
+./mvnw verify -Dit.test=CustomerJourneyIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false
+```
+
+Expected: PASS, 2 tests. Written after the implementation on purpose — it asserts nothing new, it proves the pieces from Tasks 8 through 13 compose, which is the one thing no single-feature test can show.
+
+- [ ] **Step 11: Verify the full build**
+
+```bash
+./mvnw clean verify
+```
+
+Expected: PASS, 142 tests.
+
+- [ ] **Step 12: Commit**
+
+```bash
+cd ..
+git add e-commerce-backend/src/main/java/com/mvp/ecommercebackend/user \
+        e-commerce-backend/src/test/java/com/mvp/ecommercebackend/user/AddressControllerIT.java \
+        e-commerce-backend/src/test/java/com/mvp/ecommercebackend/auth/CustomerJourneyIT.java
+git commit -m "feat: add address CRUD under /api/me/addresses
+
+Ownership is a query, not a check: every lookup is findByIdAndUserId, so
+another user's address and one that never existed are the same empty Optional
+and therefore the same 404. A 403 would confirm the id is real.
+
+Adds CustomerJourneyIT, which walks acceptance criterion 3 over HTTP end to
+end: register, log in, read the profile, add an address, refresh, log out, and
+confirm the logged-out refresh token is dead."
+```
+
+---
