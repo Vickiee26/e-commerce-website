@@ -740,21 +740,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 /**
  * Base class for every integration test.
  *
- * <p>The container is static, so a single Postgres instance is shared by all subclasses for the
- * whole suite. Isolation comes from truncating tables between tests instead of restarting the
- * database, which keeps the suite fast.
+ * <p>One Postgres instance is shared by the whole suite. Isolation comes from truncating tables
+ * between tests instead of restarting the database, which keeps the suite fast.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
@@ -762,8 +758,14 @@ public abstract class AbstractIntegrationTest {
      * Testcontainers 2.x: the class lives in org.testcontainers.postgresql and is NOT generic.
      * Spring Boot's JdbcContainerConnectionDetailsFactory binds it via @ServiceConnection because
      * it still extends org.testcontainers.containers.JdbcDatabaseContainer.
+     *
+     * <p>Deliberately NOT annotated @Container, and the class is NOT @Testcontainers: that
+     * extension starts and stops static containers per test class, but this field is inherited by
+     * every subclass while Spring caches one application context for all of them. The second IT
+     * class would then get a restarted container on a new port and fail with "Connection refused".
+     * @ServiceConnection alone makes Boot own the lifecycle, so the container is started once with
+     * the context and reused.
      */
-    @Container
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
@@ -2185,6 +2187,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -2202,8 +2205,14 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
      * Revokes the whole active token family for one user. Used both on password reset and when
      * replay of a rotated token is detected.
      *
+     * <p>{@code @Transactional} is required: Spring Data does not open a writable transaction for
+     * interface-declared query methods, so {@code flushAutomatically} would fail with "No
+     * EntityManager with actual transaction available". Propagation is REQUIRED, so a calling
+     * service's transaction is joined rather than replaced.
+     *
      * @return how many rows were revoked
      */
+    @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update RefreshToken t set t.revokedAt = :now, t.updatedAt = :now "
             + "where t.user = :user and t.revokedAt is null")
@@ -2223,6 +2232,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -2233,7 +2243,14 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
 
     Optional<PasswordResetToken> findByTokenHash(String tokenHash);
 
-    /** Marks every outstanding reset token for a user as used, so only the newest one works. */
+    /**
+     * Marks every outstanding reset token for a user as used, so only the newest one works.
+     *
+     * <p>{@code @Transactional} is required for the same reason as
+     * {@link RefreshTokenRepository#revokeAllActiveForUser}: interface-declared query methods get
+     * no writable transaction of their own.
+     */
+    @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update PasswordResetToken t set t.usedAt = :now, t.updatedAt = :now "
             + "where t.user = :user and t.usedAt is null")
@@ -2270,7 +2287,7 @@ public interface AuthEventRepository extends JpaRepository<AuthEvent, UUID> {
 ./mvnw -q verify -Dit.test=UserRepositoryIT -DfailIfNoTests=false
 ```
 
-Expected: PASS, 8 tests. `BaseEntity.updatedAt` has no setter, so the two `@Modifying` queries above assign `t.updatedAt` directly in JPQL — a bulk update bypasses `@PreUpdate` entirely, which would otherwise leave `updated_at` stale.
+Expected: PASS, 8 tests. Two details in those `@Modifying` queries are deliberate. `BaseEntity.updatedAt` has no setter, so both assign `t.updatedAt` directly in JPQL — a bulk update bypasses `@PreUpdate` entirely, which would otherwise leave `updated_at` stale. And both carry `@Transactional`, because Spring Data opens no writable transaction for interface-declared query methods; without it `flushAutomatically = true` throws `InvalidDataAccessApiUsageException: No EntityManager with actual transaction available for current thread`.
 
 - [ ] **Step 8: Verify the full build**
 

@@ -8,21 +8,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 /**
  * Base class for every integration test.
  *
- * <p>The container is static, so a single Postgres instance is shared by all subclasses for the
- * whole suite. Isolation comes from truncating tables between tests instead of restarting the
- * database, which keeps the suite fast.
+ * <p>One Postgres instance is shared by the whole suite. Isolation comes from truncating tables
+ * between tests instead of restarting the database, which keeps the suite fast.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
@@ -30,8 +26,14 @@ public abstract class AbstractIntegrationTest {
      * Testcontainers 2.x: the class lives in org.testcontainers.postgresql and is NOT generic.
      * Spring Boot's JdbcContainerConnectionDetailsFactory binds it via @ServiceConnection because
      * it still extends org.testcontainers.containers.JdbcDatabaseContainer.
+     *
+     * <p>Deliberately NOT annotated @Container, and the class is NOT @Testcontainers: that
+     * extension starts and stops static containers per test class, but this field is inherited by
+     * every subclass while Spring caches one application context for all of them. The second IT
+     * class would then get a restarted container on a new port and fail with "Connection refused".
+     * @ServiceConnection alone makes Boot own the lifecycle, so the container is started once with
+     * the context and reused.
      */
-    @Container
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
