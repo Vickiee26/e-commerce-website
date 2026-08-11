@@ -2,6 +2,8 @@ package com.mvp.ecommercebackend.support;
 
 import com.mvp.ecommercebackend.auth.repository.RoleRepository;
 import com.mvp.ecommercebackend.auth.repository.UserRepository;
+import com.mvp.ecommercebackend.catalog.repository.CategoryRepository;
+import com.mvp.ecommercebackend.catalog.repository.ProductRepository;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,5 +16,11 @@ public class TestDataConfig {
                                             RoleRepository roleRepository,
                                             PasswordEncoder passwordEncoder) {
         return new TestDataFactory(userRepository, roleRepository, passwordEncoder);
+    }
+
+    @Bean
+    public CatalogTestDataFactory catalogTestDataFactory(CategoryRepository categoryRepository,
+                                                         ProductRepository productRepository) {
+        return new CatalogTestDataFactory(categoryRepository, productRepository);
     }
 }

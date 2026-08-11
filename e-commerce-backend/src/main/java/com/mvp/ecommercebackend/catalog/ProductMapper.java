@@ -23,13 +23,18 @@ public class ProductMapper {
                 .build();
     }
 
-    // FIXME(Task 14): returns "Optional[...]" instead of the URL and NPEs on a null isPrimary.
+    /**
+     * The primary image's URL, or null when no image is flagged primary.
+     *
+     * <p>{@code Boolean.TRUE.equals(...)} rather than a method reference: {@code isPrimary} is a
+     * {@code Boolean}, so unboxing a null in the filter throws.
+     */
     private String getProductThumbnail(List<Resource> resources) {
         return resources.stream()
-                .filter(Resource::getIsPrimary)
+                .filter(resource -> Boolean.TRUE.equals(resource.getIsPrimary()))
                 .findFirst()
                 .map(Resource::getUrl)
-                .toString();
+                .orElse(null);
     }
 
     public List<ProductVariantDto> mapProductVariantListToDto(List<ProductVariant> productVariants) {

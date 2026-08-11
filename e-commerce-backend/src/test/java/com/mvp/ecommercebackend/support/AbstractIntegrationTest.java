@@ -56,6 +56,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected TestDataFactory testData;
 
+    @Autowired
+    protected CatalogTestDataFactory catalogData;
+
     /**
      * Wipes application data while preserving Flyway's history and the roles seeded by V2.
      */
