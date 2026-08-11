@@ -119,6 +119,24 @@ public class AuthService {
         return issueTokenPair(user, context);
     }
 
+    /**
+     * Rotates the presented refresh token and mints a matching access token.
+     *
+     * <p>Cannot reuse {@code issueTokenPair}, which would create a second refresh token rather than
+     * returning the rotated one.
+     */
+    @Transactional
+    public TokenPairResponse refresh(String rawRefreshToken, RequestContext context) {
+        RefreshTokenService.RotationResult rotation =
+                refreshTokenService.rotate(rawRefreshToken, context);
+
+        return new TokenPairResponse(
+                tokenService.generateAccessToken(rotation.user()),
+                rotation.refreshToken().rawValue(),
+                "Bearer",
+                jwtProperties.accessTokenTtl().toSeconds());
+    }
+
     @Transactional
     public void logout(UUID userId, String rawRefreshToken, RequestContext context) {
         refreshTokenService.revoke(rawRefreshToken, userId);

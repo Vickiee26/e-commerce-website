@@ -2,6 +2,7 @@ package com.mvp.ecommercebackend.auth;
 
 import com.mvp.ecommercebackend.auth.dto.LoginRequest;
 import com.mvp.ecommercebackend.auth.dto.LogoutRequest;
+import com.mvp.ecommercebackend.auth.dto.RefreshRequest;
 import com.mvp.ecommercebackend.auth.dto.RegisterRequest;
 import com.mvp.ecommercebackend.auth.dto.TokenPairResponse;
 import com.mvp.ecommercebackend.common.RequestContext;
@@ -41,6 +42,14 @@ public class AuthController {
     public TokenPairResponse login(@Valid @RequestBody LoginRequest request,
                                     HttpServletRequest httpRequest) {
         return authService.login(request, RequestContext.from(httpRequest));
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Rotate the refresh token and return a new token pair")
+    public TokenPairResponse refresh(@Valid @RequestBody RefreshRequest request,
+                                      HttpServletRequest httpRequest) {
+        // Public on purpose: the whole point is to recover after the access token has expired.
+        return authService.refresh(request.refreshToken(), RequestContext.from(httpRequest));
     }
 
     @PostMapping("/logout")

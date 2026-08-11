@@ -5509,7 +5509,7 @@ class RefreshRotationIT extends AbstractIntegrationTest {
 ./mvnw -q verify -Dit.test=RefreshRotationIT -DfailIfNoTests=false
 ```
 
-Expected: FAIL — `POST /auth/refresh` returns 401 (the path is permitted but unmapped, so no controller exists to answer it).
+Expected: FAIL — 7 of 8 tests fail. `/auth/refresh` is permitted but unmapped, so the request falls through to the static-resource handler and answers **500** (`NoResourceFoundException`), not the 401 the path's security config might suggest. `refreshDoesNotResurrectASuspendedAccountsAccessToken` already passes: it only calls `/auth/login`.
 
 - [ ] **Step 3: Write `RefreshRequest`**
 
