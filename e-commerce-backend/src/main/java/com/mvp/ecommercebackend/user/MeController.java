@@ -3,7 +3,9 @@ package com.mvp.ecommercebackend.user;
 import com.mvp.ecommercebackend.auth.AuthenticatedUser;
 import com.mvp.ecommercebackend.user.dto.UpdateProfileRequest;
 import com.mvp.ecommercebackend.user.dto.UserProfileResponse;
+import com.mvp.ecommercebackend.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/me")
 @Tag(name = "Profile")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
 @PreAuthorize("isAuthenticated()")
 public class MeController {
 

@@ -6,7 +6,9 @@ import com.mvp.ecommercebackend.commerce.dto.OrderSummaryResponse;
 import com.mvp.ecommercebackend.commerce.dto.PayOrderRequest;
 import com.mvp.ecommercebackend.commerce.dto.PlaceOrderRequest;
 import com.mvp.ecommercebackend.common.PageResponse;
+import com.mvp.ecommercebackend.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -34,6 +36,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/me/orders")
 @Tag(name = "Orders")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
 @PreAuthorize("isAuthenticated()")
 public class OrderController {
 

@@ -8,7 +8,9 @@ import com.mvp.ecommercebackend.auth.dto.RefreshRequest;
 import com.mvp.ecommercebackend.auth.dto.RegisterRequest;
 import com.mvp.ecommercebackend.auth.dto.TokenPairResponse;
 import com.mvp.ecommercebackend.common.RequestContext;
+import com.mvp.ecommercebackend.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -77,6 +79,8 @@ public class AuthController {
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Revoke the presented refresh token")
+    // The one /auth endpoint that needs a token: revoking a session requires knowing whose it is.
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
     public void logout(@Valid @RequestBody LogoutRequest request,
                         @AuthenticationPrincipal AuthenticatedUser principal,
                         HttpServletRequest httpRequest) {

@@ -4,7 +4,9 @@ import com.mvp.ecommercebackend.auth.AuthenticatedUser;
 import com.mvp.ecommercebackend.user.dto.AddressResponse;
 import com.mvp.ecommercebackend.user.dto.CreateAddressRequest;
 import com.mvp.ecommercebackend.user.dto.UpdateAddressRequest;
+import com.mvp.ecommercebackend.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/me/addresses")
 @Tag(name = "Addresses")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
 @PreAuthorize("isAuthenticated()")
 public class AddressController {
 

@@ -4,7 +4,9 @@ import com.mvp.ecommercebackend.auth.AuthenticatedUser;
 import com.mvp.ecommercebackend.commerce.dto.AddCartItemRequest;
 import com.mvp.ecommercebackend.commerce.dto.CartResponse;
 import com.mvp.ecommercebackend.commerce.dto.UpdateCartItemRequest;
+import com.mvp.ecommercebackend.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/me/cart")
 @Tag(name = "Cart")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME)
 @PreAuthorize("isAuthenticated()")
 public class CartController {
 
