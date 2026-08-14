@@ -65,7 +65,8 @@ public abstract class AbstractIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         jdbcTemplate.execute("""
-                TRUNCATE TABLE auth_events,
+                TRUNCATE TABLE admin_events,
+                               auth_events,
                                password_reset_tokens,
                                refresh_tokens,
                                addresses,
