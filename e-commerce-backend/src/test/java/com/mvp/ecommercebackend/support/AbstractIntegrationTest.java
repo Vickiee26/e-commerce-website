@@ -1,5 +1,7 @@
 package com.mvp.ecommercebackend.support;
 
+import com.mvp.ecommercebackend.auth.TokenService;
+import com.mvp.ecommercebackend.auth.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -58,6 +60,14 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected CatalogTestDataFactory catalogData;
+
+    @Autowired
+    protected TokenService tokenService;
+
+    /** The {@code Authorization} header value for {@code user}, ready to pass to MockMvc. */
+    protected String bearer(User user) {
+        return "Bearer " + tokenService.generateAccessToken(user);
+    }
 
     /**
      * Wipes application data while preserving Flyway's history and the roles seeded by V2.
