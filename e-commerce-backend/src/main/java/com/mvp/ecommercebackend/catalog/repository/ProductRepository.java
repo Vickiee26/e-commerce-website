@@ -66,4 +66,31 @@ public interface ProductRepository extends JpaRepository<Product, UUID>,
 
         String getUrl();
     }
+
+    /**
+     * Variant count and total stock for each of the given products, in one query.
+     *
+     * <p>Archived variants are excluded: the numbers answer "what can I sell". Reading
+     * {@code product.getProductVariants()} per row instead would be N+1 and would pull every variant
+     * of every product to add two integers.
+     */
+    @Query("""
+            select variant.product.id as productId,
+                   count(variant) as variantCount,
+                   sum(variant.stockQuantity) as totalStock
+            from ProductVariant variant
+            where variant.product.id in :productIds and variant.archivedAt is null
+            group by variant.product.id
+            """)
+    List<ProductStockSummary> findStockSummaries(@Param("productIds") Collection<UUID> productIds);
+
+    /** Projection for {@link #findStockSummaries}. */
+    interface ProductStockSummary {
+
+        UUID getProductId();
+
+        long getVariantCount();
+
+        long getTotalStock();
+    }
 }
