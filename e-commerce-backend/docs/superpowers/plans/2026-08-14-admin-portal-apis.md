@@ -77,7 +77,7 @@ Resources get their own controller and service rather than living in `AdminVaria
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `Product.getArchivedAt()/setArchivedAt(Instant)`, `ProductVariant.getArchivedAt()/setArchivedAt(Instant)`, `Order.getShippedAt()/setShippedAt(Instant)`, `Order.getDeliveredAt()/setDeliveredAt(Instant)`, `Order.getTrackingReference()/setTrackingReference(String)`, `OrderStatus.SHIPPED`, `OrderStatus.DELIVERED`, and the `admin_events` table.
+- Produces: `Product.getArchivedAt()/setArchivedAt(Instant)`, `ProductVariant.getArchivedAt()/setArchivedAt(Instant)`, `Order.getShippedAt()/setShippedAt(Instant)`, `Order.getDeliveredAt()/setDeliveredAt(Instant)`, `Order.getTrackingReference()/setTrackingReference(String)`, `OrderStatus.SHIPPED`, `OrderStatus.DELIVERED`, the `admin_events` table, and two uniqueness rules later tasks rely on: `uq_category_types_category_code` on `(category_id, code)` and the partial unique index `uq_product_variants_live` on `(product_id, color, size) WHERE archived_at IS NULL`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -91,7 +91,7 @@ In `SchemaBaselineIT`, add `"admin_events"` to the existing `assertThat(tables).
                 "product_resources", "admin_events");
 ```
 
-Then append two new tests to the same class:
+Then append three new tests to the same class:
 
 ```java
     @Test
@@ -112,6 +112,27 @@ Then append two new tests to the same class:
         assertThat(check).contains("SHIPPED").contains("DELIVERED");
     }
 
+    /**
+     * The two uniqueness rules V1 was missing. Asserted here rather than left to a service-level
+     * check, because only the database can stop two concurrent inserts.
+     */
+    @Test
+    void enforcesUniquenessOnCategoryTypeCodesAndLiveVariants() {
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT pg_get_constraintdef(oid) FROM pg_constraint
+                WHERE conname = 'uq_category_types_category_code'
+                """, String.class))
+                .isEqualTo("UNIQUE (category_id, code)");
+
+        // A partial index, so archiving a variant frees its colour and size for reuse.
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_product_variants_live'
+                """, String.class))
+                .contains("UNIQUE")
+                .contains("product_id, color, size")
+                .contains("WHERE (archived_at IS NULL)");
+    }
+
     private List<String> columnsOf(String table) {
         return jdbcTemplate.queryForList(
                 "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
@@ -122,7 +143,9 @@ Then append two new tests to the same class:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `mvn verify -Dit.test=SchemaBaselineIT`
-Expected: FAIL. `flywayCreatesEveryBaselineTable` reports `admin_events` missing, `addsArchiveAndFulfilmentColumns` reports `archived_at` missing, and `allowsTheTwoNewOrderStatuses` fails because the constraint lists only three statuses.
+Expected: FAIL. `flywayCreatesEveryBaselineTable` reports `admin_events` missing, `addsArchiveAndFulfilmentColumns` reports `archived_at` missing, `allowsTheTwoNewOrderStatuses` fails because the constraint lists only three statuses, and `enforcesUniquenessOnCategoryTypeCodesAndLiveVariants` fails with an `EmptyResultDataAccessException` because neither rule exists yet.
+
+If the `indexdef` assertion fails on exact text rather than absence, print the actual value and match it — Postgres normalises index definitions and the whitespace in `product_id, color, size` is version-dependent. Assert on the substance, not on Postgres's formatting.
 
 - [ ] **Step 3: Write the migration**
 
@@ -174,6 +197,33 @@ CREATE INDEX idx_orders_status ON orders (status, placed_at DESC);
 
 -- Partial index: the public catalogue only ever asks for unarchived products.
 CREATE INDEX idx_products_active ON products (id) WHERE archived_at IS NULL;
+
+-- Uniqueness the schema was missing. Without these, two concurrent admin requests both pass a
+-- service-level duplicate check and both insert; the service check stays as the fast path that
+-- produces a readable 409, but the guarantee lives here.
+--
+-- `categories.code` already has uq_categories_code; `category_types.code` had nothing. Scoped to
+-- the parent category, because "RUNNING" under Footwear and "RUNNING" under Apparel are different
+-- types and both are legitimate.
+ALTER TABLE category_types
+    ADD CONSTRAINT uq_category_types_category_code UNIQUE (category_id, code);
+
+-- Partial, so archiving a variant frees its colour and size for reuse. A plain unique constraint
+-- would let a retired "Black / 42" block its own replacement forever.
+CREATE UNIQUE INDEX uq_product_variants_live
+    ON product_variants (product_id, color, size)
+    WHERE archived_at IS NULL;
+```
+
+The two uniqueness rules are new to this migration, not carried over from `V1__init.sql`. If either
+statement fails on the dev database, duplicate rows already exist there — inspect them with the
+grouped query below and delete the extras before re-running, rather than dropping the constraint:
+
+```sql
+SELECT category_id, code, count(*) FROM category_types
+ GROUP BY category_id, code HAVING count(*) > 1;
+SELECT product_id, color, size, count(*) FROM product_variants
+ WHERE archived_at IS NULL GROUP BY product_id, color, size HAVING count(*) > 1;
 ```
 
 - [ ] **Step 4: Add the entity fields**
@@ -609,7 +659,7 @@ git commit -m "feat(admin): audit trail entity, repository, and service"
 - Create: `src/main/java/com/mvp/ecommercebackend/admin/dto/UpdateCategoryTypeRequest.java`
 - Create: `src/main/java/com/mvp/ecommercebackend/admin/AdminCategoryService.java`
 - Create: `src/main/java/com/mvp/ecommercebackend/admin/AdminCategoryController.java`
-- Modify: `src/main/java/com/mvp/ecommercebackend/common/GlobalExceptionHandler.java` (add one handler)
+- Modify: `src/main/java/com/mvp/ecommercebackend/common/GlobalExceptionHandler.java` (add two handlers: `ResourceInUseException` and `DataIntegrityViolationException`, both 409)
 - Modify: `src/main/java/com/mvp/ecommercebackend/catalog/CategoryService.java:37` (make `toResponse` public static)
 - Modify: `src/main/java/com/mvp/ecommercebackend/catalog/repository/ProductRepository.java` (two `exists` queries)
 - Modify: `src/test/java/com/mvp/ecommercebackend/config/OpenApiIT.java:24-43`
@@ -619,6 +669,7 @@ git commit -m "feat(admin): audit trail entity, repository, and service"
 - Consumes: `AdminEventService.record(...)`, `AdminEventType.CATEGORY_*`/`CATEGORY_TYPE_*`, `AdminTargetType.CATEGORY`/`CATEGORY_TYPE`, `AbstractIntegrationTest.bearer(User)`.
 - Produces:
   - `ResourceInUseException(String message)` — `RuntimeException`, mapped to 409.
+  - A `DataIntegrityViolationException` → 409 mapping in `GlobalExceptionHandler`, which every later task's unique constraints rely on to avoid surfacing a lost race as a 500.
   - `CategoryTypeRepository extends JpaRepository<CategoryType, UUID>` with `boolean existsByCategoryIdAndCode(UUID categoryId, String code)`.
   - `ProductRepository.existsByCategoryId(UUID)` and `ProductRepository.existsByCategoryTypeId(UUID)`.
   - `CategoryService.toResponse(Category)` — now `public static CategoryResponse`.
@@ -628,8 +679,9 @@ git commit -m "feat(admin): audit trail entity, repository, and service"
 
 **Two facts about the existing schema that shape this task:**
 
-1. `categories.code` has `uq_categories_code`, but **`category_types.code` has no unique constraint** (`V1__init.sql:110-118`). The duplicate check for types is therefore a service-level `exists` query only, and is scoped to the parent category — two categories may each have a `running-shoes` type. Two simultaneous creates could still both pass the check; that is accepted for an admin-only write path and is not worth a migration the spec did not call for.
+1. `categories.code` has `uq_categories_code` from `V1__init.sql`; **`category_types.code` had nothing** until Task 1 added `uq_category_types_category_code` on `(category_id, code)`. The service still runs an `exists` query first, because that is what produces a readable 409 naming the duplicate code — but the constraint is the actual guarantee, and it is what stops two simultaneous creates from both passing the check. The scope is `(category_id, code)`, not `code` alone: two categories may each have a `running-shoes` type.
 2. Categories get no `archived_at`. A category still referenced by a product cannot be deleted, and the service says so with a 409 instead of letting `products.category_id` raise a constraint violation that would surface as a 500.
+3. A unique constraint that fires anyway — a genuine race, or a code path that forgot its `exists` check — arrives as Spring's `DataIntegrityViolationException`, which the current `GlobalExceptionHandler` catches only in its `Exception` fallback and turns into a 500. Step 3 maps it to 409, so the race the constraint now closes reports as a conflict rather than as a server fault.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -859,7 +911,32 @@ In `GlobalExceptionHandler`, add after `handleDuplicate`:
     ProblemDetail handleResourceInUse(ResourceInUseException exception, HttpServletRequest request) {
         return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), request);
     }
+
+    /**
+     * A database constraint that the service-level check did not catch first — a genuine race between
+     * two concurrent writes, or a write path that forgot to check.
+     *
+     * <p>409 rather than the {@code Exception} fallback's 500: the server is working correctly and
+     * the caller can succeed by retrying or by choosing a different value. The message is deliberately
+     * generic — a raw Postgres constraint violation names tables, columns, and index names, which is
+     * internal detail the caller has no use for. The full exception is still logged by the fallback
+     * path's logger, so nothing is lost for debugging.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException exception,
+                                               HttpServletRequest request) {
+        log.warn("Constraint violation on {}: {}", request.getRequestURI(),
+                exception.getMostSpecificCause().getMessage());
+        return problem(HttpStatus.CONFLICT, "Conflict",
+                "The request conflicts with existing data.", request);
+    }
 ```
+
+`DataIntegrityViolationException` is `org.springframework.dao.DataIntegrityViolationException`. Match the
+logger to whatever `GlobalExceptionHandler` already declares for its `Exception` fallback — if the class
+has no logger field, use the same declaration style the rest of the codebase uses rather than inventing
+one. If the fallback handler logs at `error`, keep this one at `warn`: a losing race is expected
+behaviour, not a fault, and paging on it would be noise.
 
 In `ProductRepository`, add beside `findAllByCategoryId`:
 
@@ -2260,7 +2337,8 @@ git commit -m "feat(admin): product administration with archive and restore"
 **Decisions this task locks in:**
 
 - `stockQuantity` is accepted on create as an **opening balance** and is not on `UpdateVariantRequest`. Every later change goes through Task 6's delta endpoint. If `PATCH` could set stock absolutely, an administrator reading 10, a customer buying one, and the administrator then writing 10 would resurrect a sold unit — the whole reason the spec chose a delta.
-- A duplicate unarchived `color`/`size` pair on one product is rejected with `DuplicateResourceException` (409). The spec's error table names only category codes, so this is an addition: two identical "Black / 42" rows would show a customer the same option twice and split its stock across two rows. There is **no** database unique constraint on `(product_id, color, size)` in `V1__init.sql`, so this check is service-level only and two simultaneous creates could still both pass. Accepted rather than adding a migration the spec did not call for: this is an admin-only write path with no concurrent-creation pressure, and Task 6 — where a race would actually cost money — is locked properly.
+- A duplicate unarchived `color`/`size` pair on one product is rejected with `DuplicateResourceException` (409). The spec's error table names only category codes, so this is an addition: two identical "Black / 42" rows would show a customer the same option twice and split its stock across two rows. `V1__init.sql` had no constraint here; Task 1 added the partial unique index `uq_product_variants_live` on `(product_id, color, size) WHERE archived_at IS NULL`, so the service's `exists` check is the readable-error fast path and the index is the guarantee. A lost race arrives as `DataIntegrityViolationException`, which Task 3 mapped to 409 — so the caller sees a conflict either way.
+- Because that index is **partial**, archiving a variant frees its colour and size for reuse: retiring "Black / 42" and creating a new "Black / 42" is legal, and the archived row keeps its own stock and history. This is the behaviour that a plain unique constraint would have made impossible, and Step 1 tests it.
 - Adding a variant to an **archived** product is allowed. An administrator preparing a product for restore should not have to un-archive it first, and the variant stays invisible to customers anyway because an archived product hides regardless of its variants' flags.
 - Archive and restore are idempotent, for the same reason as Task 4.
 
@@ -6092,16 +6170,25 @@ Every criterion in the spec maps to a task above.
 
 ## Deliberate departures from the spec
 
-Three additions, each small and each argued at its task:
+Four additions, each small and each argued at its task:
 
-1. **`DuplicateResourceException` on a duplicate live variant** (Task 5). The spec's error table lists
+1. **Two unique constraints and a `DataIntegrityViolationException` mapping** (Tasks 1 and 3). The spec
+   left duplicate category-type codes and duplicate variant colour/size to service-level `exists`
+   checks, which two concurrent requests can both pass. `V5__admin.sql` therefore adds
+   `uq_category_types_category_code` on `(category_id, code)` and the **partial** unique index
+   `uq_product_variants_live` on `(product_id, color, size) WHERE archived_at IS NULL` — partial so
+   that archiving a variant frees its colour and size for reuse. The services keep their `exists`
+   checks as the readable-409 fast path; the database is the guarantee. `GlobalExceptionHandler` gains
+   a `DataIntegrityViolationException` → 409 mapping so a lost race reports as a conflict instead of
+   falling through to the 500 handler. Also fixes an unrelated gap: the codebase previously had no
+   mapping for any constraint violation.
+2. **`DuplicateResourceException` on a duplicate live variant** (Task 5). The spec's error table lists
    duplicate `code` on categories and category types but not `(product_id, color, size)` on variants.
-   `V1__init.sql` has no unique constraint there, so without the check two identical "Black / 42" rows
-   can coexist and a customer cannot tell them apart. The race remains, documented and accepted.
-2. **`CartService.updateItem` also rejects archived variants** (Task 9). The spec names only `addItem`.
+   Two identical "Black / 42" rows would show a customer the same option twice and split its stock.
+3. **`CartService.updateItem` also rejects archived variants** (Task 9). The spec names only `addItem`.
    Leaving `updateItem` open would let a customer raise the quantity of a variant they could no longer
    add, which is the same hole one call site further along.
-3. **`AdminOrderResponse` names the customer** (Task 10). Not in the spec, and deliberately not on the
+4. **`AdminOrderResponse` names the customer** (Task 10). Not in the spec, and deliberately not on the
    customer-facing `OrderResponse`: an administrator looking at an order needs to know whose it is.
 
 Two testing choices also depart from the spec's testing table:
