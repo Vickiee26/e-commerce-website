@@ -34,7 +34,8 @@ public class CategoryService {
                 .toList();
     }
 
-    private static CategoryResponse toResponse(Category category) {
+    /** Shared with the admin package, which returns the same shape after a write. */
+    public static CategoryResponse toResponse(Category category) {
         // Sorted here rather than with @OrderBy: the ordering is a presentation choice, and the
         // collection is already in memory from the fetch graph, so this costs nothing.
         List<CategoryTypeResponse> types = category.getCategoryTypes().stream()

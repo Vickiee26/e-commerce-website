@@ -22,6 +22,11 @@ public interface ProductRepository extends JpaRepository<Product, UUID>,
 
     List<Product> findAllByCategoryId(UUID categoryId);
 
+    /** Whether any product still points at this category. Guards the admin delete. */
+    boolean existsByCategoryId(UUID categoryId);
+
+    boolean existsByCategoryTypeId(UUID categoryTypeId);
+
     /**
      * A product with its category and type already loaded, so naming them costs no extra query.
      *

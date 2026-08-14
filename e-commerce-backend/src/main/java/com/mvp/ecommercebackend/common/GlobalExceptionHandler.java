@@ -123,6 +123,31 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), request);
     }
 
+    /** Conflict, not 400: the request is valid and the row exists — something else depends on it. */
+    @ExceptionHandler(ResourceInUseException.class)
+    ProblemDetail handleResourceInUse(ResourceInUseException exception, HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Conflict", exception.getMessage(), request);
+    }
+
+    /**
+     * A database constraint that the service-level check did not catch first — a genuine race between
+     * two concurrent writes, or a write path that forgot to check.
+     *
+     * <p>409 rather than the {@code Exception} fallback's 500: the server is working correctly and
+     * the caller can succeed by retrying or by choosing a different value. The message is deliberately
+     * generic — a raw Postgres constraint violation names tables, columns, and index names, which is
+     * internal detail the caller has no use for. The full exception is still logged by the fallback
+     * path's logger, so nothing is lost for debugging.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    ProblemDetail handleDataIntegrityViolation(org.springframework.dao.DataIntegrityViolationException exception,
+                                               HttpServletRequest request) {
+        log.warn("Constraint violation on {}: {}", request.getRequestURI(),
+                exception.getMostSpecificCause().getMessage());
+        return problem(HttpStatus.CONFLICT, "Conflict",
+                "The request conflicts with existing data.", request);
+    }
+
     /**
      * Conflict rather than 400: the request is well formed and the variant exists, so the client has
      * nothing to correct — the available quantity changed.
