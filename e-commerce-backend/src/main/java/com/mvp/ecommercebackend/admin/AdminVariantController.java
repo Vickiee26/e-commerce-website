@@ -1,7 +1,9 @@
 package com.mvp.ecommercebackend.admin;
 
 import com.mvp.ecommercebackend.admin.dto.AdminVariantResponse;
+import com.mvp.ecommercebackend.admin.dto.AdjustStockRequest;
 import com.mvp.ecommercebackend.admin.dto.CreateVariantRequest;
+import com.mvp.ecommercebackend.admin.dto.StockAdjustmentResponse;
 import com.mvp.ecommercebackend.admin.dto.UpdateVariantRequest;
 import com.mvp.ecommercebackend.auth.AuthenticatedUser;
 import com.mvp.ecommercebackend.config.OpenApiConfig;
@@ -35,9 +37,12 @@ import java.util.UUID;
 public class AdminVariantController {
 
     private final AdminVariantService adminVariantService;
+    private final AdminStockService adminStockService;
 
-    public AdminVariantController(AdminVariantService adminVariantService) {
+    public AdminVariantController(AdminVariantService adminVariantService,
+                                  AdminStockService adminStockService) {
         this.adminVariantService = adminVariantService;
+        this.adminStockService = adminStockService;
     }
 
     @PostMapping("/products/{id}/variants")
@@ -75,5 +80,16 @@ public class AdminVariantController {
     public AdminVariantResponse restoreVariant(@AuthenticationPrincipal AuthenticatedUser principal,
                                                @PathVariable UUID id) {
         return adminVariantService.restoreVariant(principal.id(), id);
+    }
+
+    @PostMapping("/variants/{id}/stock")
+    @Operation(summary = "Adjust a variant's stock by a signed delta",
+            description = "The row is locked for update, so an adjustment cannot be computed from a "
+                    + "stale read while a checkout is in flight. A result below zero answers 409. "
+                    + "reason is required and is written to the audit trail.")
+    public StockAdjustmentResponse adjustStock(@AuthenticationPrincipal AuthenticatedUser principal,
+                                               @PathVariable UUID id,
+                                               @Valid @RequestBody AdjustStockRequest request) {
+        return adminStockService.adjustStock(principal.id(), id, request);
     }
 }

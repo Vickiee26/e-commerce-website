@@ -40,4 +40,15 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
             order by variant.id
             """)
     List<ProductVariant> lockAllByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Locks one variant for update.
+     *
+     * <p>The single-row sibling of {@link #lockAllByIdIn}. An administrator's stock adjustment takes
+     * the same lock a checkout does, so the two serialise against each other and a delta applied
+     * during a sale cannot be computed from a stale read.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select variant from ProductVariant variant where variant.id = :id")
+    Optional<ProductVariant> lockById(@Param("id") UUID id);
 }

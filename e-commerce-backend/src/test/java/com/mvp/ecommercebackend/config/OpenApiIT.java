@@ -50,7 +50,8 @@ class OpenApiIT extends AbstractIntegrationTest {
             "/api/admin/products/{id}/restore",
             "/api/admin/products/{id}/variants",
             "/api/admin/variants/{id}",
-            "/api/admin/variants/{id}/restore");
+            "/api/admin/variants/{id}/restore",
+            "/api/admin/variants/{id}/stock");
 
     @Test
     void publishesTheApiDocumentWithoutATokenSoSwaggerUiCanLoadIt() throws Exception {
