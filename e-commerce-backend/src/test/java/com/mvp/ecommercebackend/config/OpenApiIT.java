@@ -58,7 +58,8 @@ class OpenApiIT extends AbstractIntegrationTest {
             "/api/admin/orders/{id}",
             "/api/admin/orders/{id}/ship",
             "/api/admin/orders/{id}/deliver",
-            "/api/admin/orders/{id}/cancel");
+            "/api/admin/orders/{id}/cancel",
+            "/api/admin/events");
 
     @Test
     void publishesTheApiDocumentWithoutATokenSoSwaggerUiCanLoadIt() throws Exception {
