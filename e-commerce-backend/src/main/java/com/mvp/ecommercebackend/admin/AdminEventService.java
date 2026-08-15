@@ -71,13 +71,18 @@ public class AdminEventService {
      * action, and sorting by {@code detail} or {@code action} serves nobody while widening the
      * surface. Nor is there a write or delete path — an audit trail an administrator can edit records
      * nothing.
+     *
+     * <p>Sorts by {@code createdAt} descending then {@code id} descending. The {@code id} tiebreaker
+     * ensures pagination stability: with only {@code createdAt}, Postgres may return rows in any order
+     * among events with identical timestamps, causing the same event to appear on two pages or be
+     * skipped as a caller walks the trail.
      */
     @Transactional(readOnly = true)
     public PageResponse<AdminEventResponse> list(AdminTargetType targetType, UUID targetId,
                                                  UUID actorUserId, AdminEventType action,
                                                  int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size,
-                Sort.by(Sort.Direction.DESC, "createdAt"));
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
         Page<AdminEvent> events = adminEventRepository.findAll(
                 filters(targetType, targetId, actorUserId, action), pageRequest);
 

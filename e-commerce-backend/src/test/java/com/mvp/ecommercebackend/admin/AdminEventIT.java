@@ -136,6 +136,30 @@ class AdminEventIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void combinesTwoFiltersWithAnd() throws Exception {
+        adjustStock(1);  // Creates STOCK_ADJUSTED on PRODUCT_VARIANT
+        mockMvc.perform(delete("/api/admin/products/" + product.getId())
+                        .header(HttpHeaders.AUTHORIZATION, admin))
+                .andExpect(status().isNoContent());  // Creates PRODUCT_ARCHIVED on PRODUCT
+
+        // Both filters must match: this should return only the STOCK_ADJUSTED event, because
+        // PRODUCT_ARCHIVED does not have targetType=PRODUCT_VARIANT.
+        mockMvc.perform(get("/api/admin/events?targetType=PRODUCT_VARIANT&action=STOCK_ADJUSTED")
+                        .header(HttpHeaders.AUTHORIZATION, admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].action").value("STOCK_ADJUSTED"))
+                .andExpect(jsonPath("$.content[0].targetType").value("PRODUCT_VARIANT"));
+
+        // Proof that AND is in effect, not OR: a query that would match PRODUCT_ARCHIVED if we
+        // ORed the filters returns nothing, because the second filter rejects it.
+        mockMvc.perform(get("/api/admin/events?targetType=PRODUCT&action=STOCK_ADJUSTED")
+                        .header(HttpHeaders.AUTHORIZATION, admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
     void attributesTheEventToTheCallerNotToAnyoneNamedInTheBody() throws Exception {
         User other = testData.createAdmin("other-admin@example.com", "correct-horse-battery");
 
