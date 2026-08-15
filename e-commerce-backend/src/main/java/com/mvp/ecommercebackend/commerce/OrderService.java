@@ -122,6 +122,9 @@ public class OrderService {
                 // key with ON DELETE CASCADE, so a deleted variant takes its cart lines with it.
                 throw new ResourceNotFoundException("Product Variant Not Found!");
             }
+            // Re-checked here and not only at cart-add: a variant can be archived while it sits in a
+            // cart, and nothing else revalidates cart contents.
+            requireSellable(line);
             takeStock(variant, line.getQuantity(), line.getProductName());
 
             OrderItem item = new OrderItem();
@@ -220,6 +223,15 @@ public class OrderService {
     private Order requireOwnedOrder(UUID userId, UUID orderId) {
         return orderRepository.findWithItemsByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order Not Found!"));
+    }
+
+    private static void requireSellable(CartItemRepository.CheckoutLine line) {
+        if (line.getVariantArchivedAt() != null || line.getProductArchivedAt() != null) {
+            // The product name, like takeStock: the customer is looking at a checkout page listing
+            // several items and needs to know which one to remove.
+            throw new InvalidOrderStateException(
+                    line.getProductName() + " is no longer available");
+        }
     }
 
     private static void requirePendingPayment(Order order, String attemptedAction) {
