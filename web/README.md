@@ -25,3 +25,7 @@ no CORS configuration, so never point the app at port 8080 directly.
 
 `pnpm gen:api` regenerates `packages/api-client/src/generated.ts` from the running
 backend. The output is committed; never hand-edit it.
+
+## Why the generator pins its own TypeScript version
+
+The `gen:api` script uses `pnpm dlx` to pin both `typescript@5.9.3` and `openapi-typescript@7.13.0` in a temporary environment. openapi-typescript needs the TypeScript 5 compiler API, which the TypeScript 7 native port does not expose. The workspace's own TypeScript 7.0.2 is correct for typechecking and for Vite/Vitest, so the generator invokes its own compatible version through `dlx` rather than downgrading the project.
