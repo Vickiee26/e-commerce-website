@@ -15,6 +15,7 @@
 Every task's requirements implicitly include this section. Values are copied verbatim from the spec; where a value came from backend source, the file is named so you can re-check it.
 
 - **Node 24 is the floor.** React Router 8 requires `>=22.22.0`, jsdom 30 requires `^24.15.0`, Vitest 4 requires `>=24`. Pin with `web/.nvmrc` containing `24`.
+- **pnpm 11 enforces a `minimumReleaseAge` cooldown of roughly 24 hours.** A dependency range that resolves to a version published today fails the install with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`. Pick a seasoned version, or wait the cooldown out. **Never add `minimumReleaseAgeExclude`** — it disables a supply-chain check exactly where it is working, since a freshly published version cannot be told apart from a compromised one by reading it. Likewise, `allowBuilds` entries in `web/pnpm-workspace.yaml` must hold real booleans; pnpm writes a placeholder string there that must be replaced with a decision, not committed as-is.
 - **Backend base URL is `http://localhost:8080`.** There is no CORS configuration in `SecurityConfig.java` — it never calls `.cors(...)`. All browser traffic must go through the Vite dev proxy so it is same-origin. Never hardcode `http://localhost:8080` in app code.
 - **`GET /api/admin/products` parameters are validated with `@Pattern`; a wrong value is a 400, not a fallback.** `archived` ∈ `exclude` | `only` | `all` (default `exclude`) — **not a boolean**. `sort` ∈ `name` | `price` | `createdAt` (default `name`). `direction` ∈ `asc` | `desc` (default `asc`). `q` max 100 chars. `page` >= 0. `size` 1–100 inclusive.
 - **`categoryTypeId` is required on every product.** A category with zero types can hold zero products.
@@ -1827,7 +1828,7 @@ Every screen from Task 6 onward is assembled from these. Building them once, wit
 Add to `dependencies` in `web/apps/admin/package.json`:
 
 ```json
-    "@hookform/resolvers": "^5.9.1",
+    "@hookform/resolvers": "^5.8.0",
     "react-hook-form": "^7.85.0",
     "zod": "^4.4.3"
 ```
@@ -1838,6 +1839,14 @@ Then:
 cd web
 pnpm install
 ```
+
+pnpm 11 enforces a `minimumReleaseAge` cooldown of roughly 24 hours and refuses a lockfile
+containing anything newer, so a dependency range must not resolve to a version published
+today. This plan originally said `^5.9.1`, which was hours old when it was written; the
+install failed with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`. Never resolve that by adding
+`minimumReleaseAgeExclude` — that switches off a supply-chain check precisely where it is
+doing its job, since a freshly published version cannot be distinguished from a compromised
+one by inspection. Pick a seasoned version instead, or wait the cooldown out.
 
 - [ ] **Step 2: Write the failing slug and form-error tests**
 
