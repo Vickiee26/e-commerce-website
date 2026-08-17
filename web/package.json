@@ -1,0 +1,19 @@
+{
+  "name": "shopflow-web",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @shopflow/admin dev",
+    "build": "pnpm --filter @shopflow/admin build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "gen:api": "pnpm --filter @shopflow/api-client gen:api",
+    "e2e": "pnpm --filter @shopflow/admin e2e"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
