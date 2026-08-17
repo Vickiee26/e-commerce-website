@@ -62,13 +62,15 @@ admin user management, internationalisation, production CORS.
 
 ## 3. Technology
 
+Versions verified against the npm registry on 2026-08-17.
+
 | Concern | Choice |
 |---|---|
-| Build | Vite 7, TypeScript strict |
+| Build | Vite 8, TypeScript 7 strict |
 | UI | React 19 |
-| Routing | React Router 7 |
+| Routing | React Router 8 |
 | Server state | TanStack Query 5 |
-| Styling | Tailwind CSS 4 |
+| Styling | Tailwind CSS 4 (via `@tailwindcss/vite`) |
 | Forms | react-hook-form + zod resolver |
 | Types | `openapi-typescript`, generated from `/v3/api-docs` |
 | Unit/component tests | Vitest + React Testing Library + MSW |
@@ -82,7 +84,7 @@ library's opinions about tables and dialogs would fight the mobile/desktop split
 
 ```
 web/
-├─ .nvmrc                        22
+├─ .nvmrc                        24
 ├─ pnpm-workspace.yaml
 ├─ package.json                  scripts delegating to apps
 ├─ packages/
@@ -172,11 +174,12 @@ wrong value is a 400, not a silent fallback. The UI must send only these:
 | Param | Allowed values | Default |
 |---|---|---|
 | `archived` | `exclude`, `only`, `all` — **not a boolean** | `exclude` |
-| `sort` | `name`, `price`, `createdAt` — whitelisted, no arbitrary entity paths | `createdAt` |
-| `direction` | `asc`, `desc` (case-insensitive) | `desc` |
+| `sort` | `name`, `price`, `createdAt` — whitelisted, no arbitrary entity paths | `name` |
+| `direction` | `asc`, `desc` (case-insensitive) | `asc` |
 | `categoryId` | uuid | none |
-| `q` | free text | none |
-| `page`, `size` | integers | 0, 20 |
+| `q` | free text, `@Size(max = 100)` | none |
+| `page` | integer `>= 0` | 0 |
+| `size` | integer 1–100 inclusive | 20 |
 
 The public `GET /api/products` uses the same `sort` and `direction` whitelist
 (`ProductController.java:51-54`), so sub-project 2 inherits it.
@@ -189,15 +192,25 @@ Read from the schema and the backend source, not assumed:
    with zero types can hold zero products.
 2. **A type must belong to the chosen category or the response is 404, not 400**
    (`AdminProductService.java:186-196`). The UI must make the mismatch unreachable.
-3. **`categories.code` is globally unique** (`V1__init.sql:107`, `uq_categories_code`).
-4. **`category_types.code` has no unique constraint** (`V1__init.sql:110-118`). The UI must
-   not assume type codes are unique, even within one category.
+3. **`categories.code` is globally unique** (`V1__init.sql:107`, `uq_categories_code`) and is
+   constrained to `[a-z0-9]+(-[a-z0-9]+)*` — **lower-case kebab-case, not upper-case**
+   (`CreateCategoryRequest.java`, same pattern on `CreateCategoryTypeRequest`). It is also
+   **immutable**: `UpdateCategoryRequest` and `UpdateCategoryTypeRequest` carry only `name`
+   and `description`, so the code field is editable on create and absent on edit.
+4. **`category_types.code` has no unique constraint** (`V1__init.sql:110-118`), but
+   `AdminCategoryService.createCategoryType` rejects a code already used *within the same
+   category* with a 409. Two categories may therefore hold types with the same code; one
+   category may not.
 5. **Stock changes only by signed delta with a mandatory reason** (`AdjustStockRequest`:
    `delta` required, `reason` required, delta must be non-zero). There is no set-absolute
-   endpoint.
+   endpoint. The schema also exposes a spurious `deltaNonZero` boolean — an `@AssertTrue`
+   validator leaking into the generated document. The UI must never send it.
 6. **`UpdateVariantRequest` carries only colour and size.** Stock is a separate call.
 7. **Product delete is soft.** `DELETE` sets `archivedAt`; `restore` clears it.
-8. **Category delete is hard and cascades to its types.**
+8. **Category delete is hard and cascades to its types**, but it is **refused with a 409 while
+   any product still uses the category** (`AdminCategoryService.deleteCategory`), and deleting
+   a single type is refused the same way while a product uses that type. So the confirmation
+   must state the cascade, and the 409 wording must be surfaced rather than swallowed.
 9. **There is no upload endpoint.** `CreateResourceRequest.url` is a string, max 1000 chars.
 10. **`PageResponse*` is a custom envelope**, not Spring's `Page`: `content`, `page`, `size`,
     `totalElements`, `totalPages`, `first`, `last`.
@@ -229,8 +242,9 @@ Read from the schema and the backend source, not assumed:
 | `CreateResourceRequest` | `url` | required, <=1000 |
 | | `name`, `type` | optional, <=255 / <=30 |
 | `CreateCategoryRequest` | `name` | required, <=255 |
-| | `code` | required, <=100 |
+| | `code` | required, <=100, `[a-z0-9]+(-[a-z0-9]+)*` |
 | | `description` | optional, <=2000 |
+| `CreateCategoryTypeRequest` | same three fields, same limits |
 
 ## 6. The `api-client` package
 
@@ -350,9 +364,13 @@ Categories with their types nested one level. A category with an empty `types` a
 a **"No types — cannot hold products"** badge, so constraint 1 is visible before it is hit
 from the product form.
 
-`code` auto-derives from `name` (uppercase, non-alphanumerics to underscore: "Abaya" →
-`ABAYA`) and stays editable. A duplicate code is a conflict from the unique constraint in
-§5, shown inline on the `code` field.
+`code` auto-derives from `name` as a lower-case kebab-case slug — lower-cased, runs of
+non-alphanumerics collapsed to one hyphen, leading and trailing hyphens trimmed: "Abaya" →
+`abaya`, "Head Scarves & Wraps" → `head-scarves-wraps`. The pattern in §5 constraint 3
+makes upper-case or underscored codes a 400, so the slug is not cosmetic. The field stays
+editable on the create form and is absent from the edit form, because the code is
+immutable. A duplicate code is a conflict from the unique constraint, shown inline on the
+`code` field.
 
 Deleting a category is hard and cascades. Its confirmation names the category, states how
 many types will be deleted with it, and says the action cannot be undone. It is the only
@@ -468,9 +486,9 @@ Created through the finished UI, which doubles as the first end-to-end exercise 
 
 | Category | Code | Initial type |
 |---|---|---|
-| Abaya | `ABAYA` | Abaya |
-| Hijabs | `HIJABS` | Hijabs |
-| Accessories | `ACCESSORIES` | Accessories |
+| Abaya | `abaya` | Abaya (`abaya`) |
+| Hijabs | `hijabs` | Hijabs (`hijabs`) |
+| Accessories | `accessories` | Accessories (`accessories`) |
 
 One same-named type per category satisfies constraint 1 in §5. Real subcategories
 (Abaya → Open, Closed, Kimono) are added later as rows, with no migration of existing
@@ -483,9 +501,13 @@ Verified on this machine 2026-08-17. All four are setup steps, not code.
 1. **No admin user exists.** Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in
    `e-commerce-backend/.env` (both currently blank) and restart the backend so
    `AdminBootstrap` creates the account. Nothing in this app can be tested until then.
-2. **Node is 18.20.7**, which is past end-of-life; Vite 7 and React Router 7 require Node
-   20+. `nvm` is installed and Homebrew already has Node 24.8.0. Use `nvm install 22` and
-   pin it with `web/.nvmrc`.
+   The password must be **at least 12 characters**: with `ADMIN_EMAIL` set and a shorter
+   password, `AdminBootstrap` throws `IllegalStateException` and the backend fails to
+   start. The runner is idempotent and leaves an existing account with that email alone.
+2. **Node is 18.20.7**, which is past end-of-life and below every floor here. The binding
+   constraints are React Router 8 (`>=22.22.0`), jsdom 30 (`^24.15.0`) and Vitest 4
+   (`>=24`), so **Node 24** is the floor, not 20 or 22. `nvm` is installed; use
+   `nvm install 24` (24.19.0 is Latest LTS) and pin it with `web/.nvmrc`.
 3. **pnpm is not installed.** `corepack enable pnpm` (corepack ships with the current Node).
 4. **No backend CORS.** The Vite dev server proxies `/api` and `/auth` to
    `http://localhost:8080`, making requests same-origin in development. No backend change.
@@ -513,7 +535,7 @@ needed and neither substitutes for the other.
    not a broken shell, and holds no tokens afterwards.
 2. Refreshing the page keeps an admin signed in; closing the browser signs them out.
 3. N concurrent requests meeting a 401 trigger exactly one `POST /auth/refresh`.
-4. Creating a category named "Abaya" pre-fills the code `ABAYA`; a duplicate code shows an
+4. Creating a category named "Abaya" pre-fills the code `abaya`; a duplicate code shows an
    error on that field.
 5. A category with no types shows the "cannot hold products" badge, and the product form
    offers a link to fix it instead of an empty dropdown.
