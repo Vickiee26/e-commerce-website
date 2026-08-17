@@ -388,13 +388,12 @@ git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
     ".": "./src/index.ts"
   },
   "scripts": {
-    "gen:api": "openapi-typescript http://localhost:8080/v3/api-docs -o src/generated.ts",
+    "gen:api": "pnpm dlx --package=typescript@5.9.3 --package=openapi-typescript@7.13.0 openapi-typescript http://localhost:8080/v3/api-docs -o src/generated.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",
-    "openapi-typescript": "^7.13.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

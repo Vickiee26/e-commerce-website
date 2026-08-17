@@ -254,6 +254,15 @@ Read from the schema and the backend source, not assumed:
 The output is committed so builds do not require a running backend, and regenerating it
 turns backend drift into a TypeScript error instead of a runtime surprise.
 
+The generator is invoked through `pnpm dlx --package=typescript@5.9.3
+--package=openapi-typescript@7.13.0` rather than installed as a dependency.
+`openapi-typescript` builds its output with TypeScript's JavaScript compiler API and declares
+`peerDependencies: { typescript: '^5.x' }`; TypeScript 7 is the native port and exposes no
+`ts.factory`, so the two cannot share one installation. The project keeps TypeScript 7 for
+typechecking — verified clean against `tsconfig.base.json` — and the generator gets its own
+pinned TypeScript 5 in a temporary environment, which also keeps an unsatisfiable peer out of
+the workspace.
+
 ### Error model
 
 Every non-2xx response is parsed into one `ApiError`:
