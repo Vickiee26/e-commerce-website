@@ -72,4 +72,36 @@ describe('ConfirmDialog', () => {
 
     expect(screen.getByRole('button', { name: 'Delete category' })).toBeDisabled()
   })
+
+  it('blocks all dismissal (Escape, backdrop, Cancel) while busy', async () => {
+    const onCancel = vi.fn()
+    const { container } = render(
+      <ConfirmDialog open busy title="Delete Abaya?" confirmLabel="Delete category" onConfirm={vi.fn()} onCancel={onCancel}>
+        body
+      </ConfirmDialog>,
+    )
+
+    await userEvent.keyboard('{Escape}')
+    expect(onCancel).not.toHaveBeenCalled()
+
+    const backdrop = container.querySelector('.fixed.inset-0')
+    await userEvent.click(backdrop!)
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('allows dismissal via Escape and backdrop when not busy', async () => {
+    const onCancel = vi.fn()
+    const { container } = render(
+      <ConfirmDialog open title="Delete Abaya?" confirmLabel="Delete category" onConfirm={vi.fn()} onCancel={onCancel}>
+        body
+      </ConfirmDialog>,
+    )
+
+    await userEvent.keyboard('{Escape}')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+
+    const backdrop = container.querySelector('.fixed.inset-0')
+    await userEvent.click(backdrop!)
+    expect(onCancel).toHaveBeenCalledTimes(2)
+  })
 })

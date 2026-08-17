@@ -78,4 +78,25 @@ describe('applyApiErrorToForm', () => {
 
     expect(screen.getByTestId('banner')).toHaveTextContent('An unexpected error occurred')
   })
+
+  it('last-wins when multiple errors target the same field', async () => {
+    render(
+      <Harness
+        error={
+          new ApiError(400, {
+            detail: 'Validation failed',
+            errors: [
+              { field: 'name', message: 'first message' },
+              { field: 'name', message: 'second message' },
+            ],
+          })
+        }
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'apply' }))
+
+    expect(screen.getByTestId('name-error')).toHaveTextContent('second message')
+    expect(screen.getByTestId('banner')).toHaveTextContent('no-banner')
+  })
 })

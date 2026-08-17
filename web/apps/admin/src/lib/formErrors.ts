@@ -15,6 +15,8 @@ export function applyApiErrorToForm<T extends FieldValues>(
   if (!isApiError(error)) return 'An unexpected error occurred. Please try again.'
 
   const unmatched: string[] = []
+  // Last-wins if multiple errors name the same field — the backend emits one error per field, but
+  // if that ever changes, a second setError for the same path overwrites the first.
   for (const fieldError of error.fieldErrors) {
     const path = fieldError.field as Path<T>
     if (knownFields.includes(path)) {

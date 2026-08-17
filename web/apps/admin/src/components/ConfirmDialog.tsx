@@ -26,11 +26,15 @@ export function ConfirmDialog({
   onCancel,
   children,
 }: ConfirmDialogProps): ReactElement | null {
+  const handleClose = (): void => {
+    if (!busy) onCancel()
+  }
+
   return (
     <Dialog
       open={open}
       title={title}
-      onClose={onCancel}
+      onClose={handleClose}
       footer={
         <>
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
