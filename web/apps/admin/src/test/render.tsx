@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
+import { ToastProvider } from '../components/Toast'
 
 export type RenderOptions = {
   /** The entry URL, including any search string the screen reads. */
@@ -26,14 +27,16 @@ export function renderWithProviders(
 
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[route]}>
-        <Routes>
-          <Route path={path} element={ui} />
-          {extraRoutes.map((extra) => (
-            <Route key={extra.path} path={extra.path} element={extra.element} />
-          ))}
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Routes>
+            <Route path={path} element={ui} />
+            {extraRoutes.map((extra) => (
+              <Route key={extra.path} path={extra.path} element={extra.element} />
+            ))}
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 
