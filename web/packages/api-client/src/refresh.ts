@@ -43,6 +43,12 @@ async function runRefresh(): Promise<string> {
   }
 
   const pair = (await response.json()) as TokenPair
+  // The store may have moved while the request was in flight: clearTokens after logout, or
+  // setTokens for a fresh sign-in. Either way the new state wins; the stale success must not
+  // clobber it. Do not emit expiry: the state change already handled the session.
+  if (getRefreshToken() !== refreshToken) {
+    throw new ApiError(401, { title: 'Session changed' })
+  }
   setTokens({ accessToken: pair.accessToken, refreshToken: pair.refreshToken })
   return pair.accessToken
 }

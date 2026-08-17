@@ -1,5 +1,5 @@
 import { getBaseUrl } from './config'
-import { NetworkError, toApiError } from './problem'
+import { ApiError, NetworkError, toApiError } from './problem'
 import { ensureFresh } from './refresh'
 import { getAccessToken } from './tokens'
 
@@ -71,5 +71,13 @@ async function send(
 async function readBody<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T
   const text = await response.text()
-  return (text === '' ? undefined : JSON.parse(text)) as T
+  if (text === '') return undefined as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new ApiError(response.status, {
+      title: 'Invalid JSON response',
+      detail: 'The server returned a successful response that was not valid JSON.',
+    })
+  }
 }

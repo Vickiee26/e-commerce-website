@@ -91,17 +91,31 @@ describe('request', () => {
 
     await expect(request('/api/categories', { auth: false })).rejects.toBeInstanceOf(NetworkError)
   })
+
+  it('throws an ApiError when a 200 response body is not valid JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', { status: 200 })))
+    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+
+    await expect(request('/api/admin/products')).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 200 &&
+        error.title === 'Invalid JSON response',
+    )
+  })
 })
 
 describe('single-flight refresh', () => {
   it('collapses concurrent 401s into exactly one POST /auth/refresh and retries each request', async () => {
-    const calls: string[] = []
+    const calls: Array<{ url: string; auth: string | null; body: string | undefined }> = []
     let refreshed = false
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        calls.push(url)
+        const auth = init?.headers ? new Headers(init.headers).get('Authorization') : null
+        const body = init?.body as string | undefined
+        calls.push({ url, auth, body })
         if (url.endsWith('/auth/refresh')) {
           refreshed = true
           return jsonResponse(200, TOKEN_PAIR)
@@ -118,9 +132,15 @@ describe('single-flight refresh', () => {
     ])
 
     expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }])
-    expect(calls.filter((url) => url.endsWith('/auth/refresh'))).toHaveLength(1)
+    expect(calls.filter((c) => c.url.endsWith('/auth/refresh'))).toHaveLength(1)
     expect(getAccessToken()).toBe('access-2')
     expect(getRefreshToken()).toBe('refresh-2')
+    // Verify the refresh POST carried the old refresh token
+    const refreshCall = calls.find((c) => c.url.endsWith('/auth/refresh'))!
+    expect(refreshCall.body).toContain('"refreshToken":"refresh-1"')
+    // Verify at least one retry carried the new access token
+    const retryCall = calls.find((c) => c.auth === 'Bearer access-2')
+    expect(retryCall).toBeDefined()
   })
 
   it('retries a request only once, so a second 401 surfaces', async () => {
@@ -169,5 +189,61 @@ describe('single-flight refresh', () => {
 
     await expect(request('/api/admin/products')).rejects.toBeInstanceOf(ApiError)
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(0)
+  })
+
+  it('does not write tokens when the store changed while the refresh was in flight', async () => {
+    let resolveRefresh: ((value: Response) => void) | null = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/auth/refresh')) {
+          // Return a promise that we control resolution of
+          return new Promise<Response>((resolve) => {
+            resolveRefresh = resolve
+          })
+        }
+        return jsonResponse(401, { title: 'Unauthorized' })
+      }),
+    )
+    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+
+    // Start the request which triggers refresh
+    const requestPromise = request('/api/admin/products')
+
+    // Wait a tick for the refresh to start
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Now clear tokens (simulating logout)
+    clearTokens()
+
+    // Resolve the refresh with a successful response
+    resolveRefresh!(jsonResponse(200, TOKEN_PAIR))
+
+    // The request should still fail, and tokens should remain cleared
+    await expect(requestPromise).rejects.toBeInstanceOf(ApiError)
+    expect(getAccessToken()).toBeNull()
+    expect(getRefreshToken()).toBeNull()
+  })
+
+  it('does not clear tokens or emit auth:expired when the refresh fails at the network level', async () => {
+    const listener = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, listener)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/auth/refresh')) {
+          throw new TypeError('Network failure')
+        }
+        return jsonResponse(401, { title: 'Unauthorized' })
+      }),
+    )
+    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+
+    await expect(request('/api/admin/products')).rejects.toBeInstanceOf(NetworkError)
+    expect(getRefreshToken()).toBe('refresh-1') // Token survives
+    expect(listener).toHaveBeenCalledTimes(0) // No expiry event
+    window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
   })
 })
