@@ -6,7 +6,7 @@ import type {
   UpdateVariantRequest,
 } from '@shopflow/api-client'
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
-import { PRODUCTS_QUERY_KEY, productQueryKey } from '../products/queries'
+import { PRODUCTS_LIST_QUERY_KEY, productQueryKey } from '../products/queries'
 import { adjustStock, archiveVariant, createVariant, restoreVariant, updateVariant } from './api'
 
 /**
@@ -18,7 +18,7 @@ function useVariantInvalidation(productId: string): () => void {
 
   return () => {
     void queryClient.invalidateQueries({ queryKey: productQueryKey(productId) })
-    void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+    void queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY })
   }
 }
 

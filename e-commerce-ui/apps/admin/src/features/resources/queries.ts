@@ -4,7 +4,7 @@ import type {
   UpdateResourceRequest,
 } from '@shopflow/api-client'
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
-import { PRODUCTS_QUERY_KEY, productQueryKey } from '../products/queries'
+import { PRODUCTS_LIST_QUERY_KEY, productQueryKey } from '../products/queries'
 import { createResource, deleteResource, updateResource } from './api'
 
 /**
@@ -16,7 +16,7 @@ function useResourceInvalidation(productId: string): () => void {
 
   return () => {
     void queryClient.invalidateQueries({ queryKey: productQueryKey(productId) })
-    void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+    void queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY })
   }
 }
 

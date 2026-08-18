@@ -68,7 +68,9 @@ export function ImagesCard({ product }: { product: AdminProduct }): ReactElement
                     variant="secondary"
                     className="px-3 text-xs"
                     aria-label={`Make ${label(resource)} primary`}
-                    loading={update.isPending}
+                    // One mutation object serves every row, so `isPending` alone would spin all of
+                    // them. `variables` is the row actually being promoted.
+                    loading={update.isPending && update.variables?.resourceId === resource.id}
                     onClick={() => promote(resource)}
                   >
                     Make primary

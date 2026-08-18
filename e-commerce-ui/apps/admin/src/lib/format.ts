@@ -6,7 +6,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
 
 /**
  * Catalogue prices carry no currency of their own; USD is a hardcoded constant on the order
- * side (OrderService.java:54-57). There is deliberately no currency parameter here.
+ * side (OrderService). There is deliberately no currency parameter here.
  */
 export function formatUsd(amount: number): string {
   return usdFormatter.format(amount)

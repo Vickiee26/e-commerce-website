@@ -4,6 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Dialog } from './Dialog'
 
+/**
+ * The backdrop is whatever the panel sits in — expressed as a relationship rather than as
+ * `.fixed.inset-0`, so restyling the overlay does not break a test about dismissal.
+ */
+function backdropOf(): HTMLElement {
+  const backdrop = screen.getByRole('dialog').parentElement
+  if (backdrop === null) throw new Error('the dialog panel has no backdrop to click')
+  return backdrop
+}
+
 describe('Dialog', () => {
   it('renders nothing while closed', () => {
     render(
@@ -73,9 +83,9 @@ describe('ConfirmDialog', () => {
     expect(screen.getByRole('button', { name: 'Delete category' })).toBeDisabled()
   })
 
-  it('blocks all dismissal (Escape, backdrop, Cancel) while busy', async () => {
+  it('blocks every route out (Escape, backdrop, Cancel, close) while busy', async () => {
     const onCancel = vi.fn()
-    const { container } = render(
+    render(
       <ConfirmDialog open busy title="Delete Abaya?" confirmLabel="Delete category" onConfirm={vi.fn()} onCancel={onCancel}>
         body
       </ConfirmDialog>,
@@ -84,14 +94,18 @@ describe('ConfirmDialog', () => {
     await userEvent.keyboard('{Escape}')
     expect(onCancel).not.toHaveBeenCalled()
 
-    const backdrop = container.querySelector('.fixed.inset-0')
-    await userEvent.click(backdrop!)
+    await userEvent.click(backdropOf())
+    expect(onCancel).not.toHaveBeenCalled()
+
+    // Both of these are visible while the request is in flight, so both have to be inert.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onCancel).not.toHaveBeenCalled()
   })
 
   it('allows dismissal via Escape and backdrop when not busy', async () => {
     const onCancel = vi.fn()
-    const { container } = render(
+    render(
       <ConfirmDialog open title="Delete Abaya?" confirmLabel="Delete category" onConfirm={vi.fn()} onCancel={onCancel}>
         body
       </ConfirmDialog>,
@@ -100,8 +114,7 @@ describe('ConfirmDialog', () => {
     await userEvent.keyboard('{Escape}')
     expect(onCancel).toHaveBeenCalledTimes(1)
 
-    const backdrop = container.querySelector('.fixed.inset-0')
-    await userEvent.click(backdrop!)
+    await userEvent.click(backdropOf())
     expect(onCancel).toHaveBeenCalledTimes(2)
   })
 })

@@ -8,6 +8,7 @@ import { ImagesCard } from './ImagesCard'
 const PRODUCT_ID = '77777777-7777-7777-7777-777777777777'
 const PRIMARY_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
 const SECOND_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+const THIRD_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
 const PRODUCT = {
   id: PRODUCT_ID,
@@ -122,6 +123,38 @@ describe('ImagesCard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Make Back primary' }))
 
     await waitFor(() => expect(patched).toEqual([{ isPrimary: true }]))
+  })
+
+  it('shows the pending state on the image being promoted, not on every image', async () => {
+    let release = (): void => {}
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.patch(`${API}/api/admin/resources/${SECOND_ID}`, async () => {
+        await inFlight
+        return HttpResponse.json({ ...PRODUCT.resources[1], isPrimary: true })
+      }),
+    )
+    renderCard({
+      ...PRODUCT,
+      resources: [
+        ...PRODUCT.resources,
+        { id: THIRD_ID, name: 'Side', url: 'https://cdn.test/side.jpg', type: 'image', isPrimary: false },
+      ],
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Make Back primary' }))
+
+    const promoting = screen.getByRole('button', { name: 'Make Back primary' })
+    const untouched = screen.getByRole('button', { name: 'Make Side primary' })
+    await waitFor(() => expect(promoting).toHaveAttribute('aria-busy', 'true'))
+    // The mutation object is shared by every row, so this is the assertion that matters.
+    expect(untouched).toHaveAttribute('aria-busy', 'false')
+    expect(untouched).toBeEnabled()
+
+    release()
+    await waitFor(() => expect(promoting).toHaveAttribute('aria-busy', 'false'))
   })
 
   it('confirms before removing an image', async () => {

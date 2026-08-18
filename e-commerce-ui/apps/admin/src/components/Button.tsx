@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactElement } from 'react'
+import type { ComponentProps, ReactElement } from 'react'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost'
 
@@ -9,7 +9,9 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   ghost: 'text-slate-700 hover:bg-slate-100 disabled:text-slate-400',
 }
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+/** ComponentProps rather than ButtonHTMLAttributes so `ref` comes with it — React 19 passes it as
+ * an ordinary prop, and the mobile drawer needs one to hand focus back to its trigger. */
+export type ButtonProps = ComponentProps<'button'> & {
   variant?: ButtonVariant
   loading?: boolean
 }

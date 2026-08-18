@@ -24,9 +24,16 @@ import type { ProductFilters } from './filters'
 
 export const PRODUCTS_QUERY_KEY = 'products'
 
+/**
+ * The lists get their own segment so invalidating them cannot also match a detail: TanStack matches
+ * on key prefixes, and a bare [PRODUCTS_QUERY_KEY] would sweep up ['products','detail',id] too —
+ * refetching the open product on every save straight after its response was written to the cache.
+ */
+export const PRODUCTS_LIST_QUERY_KEY = [PRODUCTS_QUERY_KEY, 'list']
+
 export function useProducts(filters: ProductFilters): UseQueryResult<AdminProductPage> {
   return useQuery({
-    queryKey: [PRODUCTS_QUERY_KEY, filters],
+    queryKey: [...PRODUCTS_LIST_QUERY_KEY, filters],
     queryFn: () => fetchProducts(filters),
     // Keeps the current rows on screen while the next page loads instead of flashing skeletons.
     placeholderData: keepPreviousData,
@@ -39,7 +46,7 @@ export function useCreateProduct(): UseMutationResult<AdminProduct, unknown, Cre
   return useMutation({
     mutationFn: createProduct,
     // Every filtered list is now stale; the key prefix invalidates them all.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY }),
   })
 }
 
@@ -68,7 +75,7 @@ export function useUpdateProduct(
     mutationFn: (body: UpdateProductRequest) => updateProduct(id, body),
     onSuccess: (product) => {
       queryClient.setQueryData(productQueryKey(id), product)
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY })
     },
   })
 }
@@ -78,8 +85,12 @@ export function useArchiveProduct(id: string): UseMutationResult<void, unknown, 
 
   return useMutation({
     mutationFn: () => archiveProduct(id),
-    // 204 carries no body, so refetch rather than invent an archivedAt.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] }),
+    // 204 carries no body, so refetch rather than invent an archivedAt. The detail is named
+    // explicitly because it is the refetch that swaps the header to "Restore product".
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: productQueryKey(id) })
+      void queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY })
+    },
   })
 }
 
@@ -90,7 +101,7 @@ export function useRestoreProduct(id: string): UseMutationResult<AdminProduct, u
     mutationFn: () => restoreProduct(id),
     onSuccess: (product) => {
       queryClient.setQueryData(productQueryKey(id), product)
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void queryClient.invalidateQueries({ queryKey: PRODUCTS_LIST_QUERY_KEY })
     },
   })
 }
