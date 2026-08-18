@@ -7,6 +7,7 @@ import { ErrorPanel, Skeleton } from '../../components/QueryStates'
 import { useToast } from '../../components/Toast'
 import { describeError } from '../../lib/errors'
 import { formatDateTime } from '../../lib/format'
+import { VariantsCard } from '../variants/VariantsCard'
 import { ProductDetailsCard } from './ProductDetailsCard'
 import { useArchiveProduct, useProduct, useRestoreProduct } from './queries'
 
@@ -96,8 +97,9 @@ export function ProductDetailPage(): ReactElement {
       </header>
 
       <ProductDetailsCard product={product.data} />
+      <VariantsCard product={product.data} />
 
-      {/* Task 12 adds the variants section here and Task 13 the images section. */}
+      {/* Task 13 adds the images section here. */}
 
       <ConfirmDialog
         open={confirming === 'archive'}
