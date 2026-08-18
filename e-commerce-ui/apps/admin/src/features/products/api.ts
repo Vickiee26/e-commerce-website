@@ -1,4 +1,9 @@
-import { request, type AdminProductPage } from '@shopflow/api-client'
+import {
+  request,
+  type AdminProduct,
+  type AdminProductPage,
+  type CreateProductRequest,
+} from '@shopflow/api-client'
 import type { ProductFilters } from './filters'
 
 /** `request` drops empty values, so a blank `q` or `categoryId` never reaches the backend. */
@@ -14,4 +19,9 @@ export function fetchProducts(filters: ProductFilters): Promise<AdminProductPage
       size: filters.size,
     },
   })
+}
+
+/** 404 if `categoryTypeId` does not belong to `categoryId`; the form makes that unreachable. */
+export function createProduct(body: CreateProductRequest): Promise<AdminProduct> {
+  return request<AdminProduct>('/api/admin/products', { method: 'POST', body })
 }
