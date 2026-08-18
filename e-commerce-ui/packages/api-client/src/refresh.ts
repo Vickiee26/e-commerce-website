@@ -10,6 +10,14 @@ import { emitAuthExpired, getAccessToken, getRefreshToken, setTokens } from './t
  */
 let inFlight: Promise<string> | null = null
 
+/**
+ * A hung refresh is the worst failure this module has. Every 401 waits on the one shared promise
+ * above, and main.tsx awaits restoreSession() at module scope against an empty #root — so a request
+ * that never settles is a blank page with no error and nothing to retry. An explicit controller
+ * rather than AbortSignal.timeout so the deadline is a timer a test can advance.
+ */
+export const REFRESH_TIMEOUT_MS = 10_000
+
 export function ensureFresh(): Promise<string> {
   inFlight ??= runRefresh().finally(() => {
     inFlight = null
@@ -24,16 +32,23 @@ async function runRefresh(): Promise<string> {
     throw new ApiError(401, { title: 'Session expired', detail: 'Please sign in again.' })
   }
 
+  const controller = new AbortController()
+  const deadline = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS)
+
   let response: Response
   try {
     response = await fetch(`${getBaseUrl()}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ refreshToken }),
+      signal: controller.signal,
     })
   } catch (cause) {
-    // A flaky network is not an expired session, so the tokens survive and the user can retry.
+    // A flaky network — or the deadline above — is not an expired session, so the tokens survive
+    // and the user can retry. Deliberately the same branch: to a caller both are "ask again later".
     throw new NetworkError(cause)
+  } finally {
+    clearTimeout(deadline)
   }
 
   if (!response.ok) {

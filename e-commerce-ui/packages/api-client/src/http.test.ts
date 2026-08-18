@@ -143,7 +143,9 @@ describe('single-flight refresh', () => {
     expect(retryCall).toBeDefined()
   })
 
-  it('retries a request only once, so a second 401 surfaces', async () => {
+  it('retries once and ends the session when the second 401 arrives on a fresh token', async () => {
+    const listener = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, listener)
     const calls: string[] = []
     vi.stubGlobal(
       'fetch',
@@ -161,6 +163,11 @@ describe('single-flight refresh', () => {
     )
     expect(calls.filter((url) => url.endsWith('/api/admin/products'))).toHaveLength(2)
     expect(calls.filter((url) => url.endsWith('/auth/refresh'))).toHaveLength(1)
+    // A token the server minted and then rejected is unusable. Without this the caller only gets an
+    // error panel whose Retry loops 401 -> refresh -> 401 and never says to sign in again.
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(getRefreshToken()).toBeNull()
+    window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
   })
 
   it('purges the tokens and announces auth:expired when the refresh itself fails', async () => {
@@ -192,6 +199,8 @@ describe('single-flight refresh', () => {
   })
 
   it('does not write tokens when the store changed while the refresh was in flight', async () => {
+    const listener = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, listener)
     let resolveRefresh: ((value: Response) => void) | null = null
     vi.stubGlobal(
       'fetch',
@@ -224,6 +233,10 @@ describe('single-flight refresh', () => {
     await expect(requestPromise).rejects.toBeInstanceOf(ApiError)
     expect(getAccessToken()).toBeNull()
     expect(getRefreshToken()).toBeNull()
+    // And no expiry is announced: the logout that cleared the store already handled the session, so
+    // firing here would race a second redirect against it. refresh.ts states this; this pins it.
+    expect(listener).toHaveBeenCalledTimes(0)
+    window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
   })
 
   it('does not clear tokens or emit auth:expired when the refresh fails at the network level', async () => {

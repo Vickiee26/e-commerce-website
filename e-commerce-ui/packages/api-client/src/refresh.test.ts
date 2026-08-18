@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBaseUrl } from './config'
-import { resetRefreshState, restoreSession } from './refresh'
+import { REFRESH_TIMEOUT_MS, resetRefreshState, restoreSession } from './refresh'
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './tokens'
 
 const BASE = 'http://backend.test'
@@ -72,5 +72,33 @@ describe('restoreSession', () => {
 
     expect(result).toBe(false)
     expect(getAccessToken()).toBeNull()
+  })
+
+  /**
+   * main.tsx awaits this at module scope and index.html has no fallback markup, so a refresh that
+   * never answers is not a slow sign-in: it is a permanently blank page. The abort has to win.
+   */
+  it('gives up rather than hanging when the refresh never answers', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_input: RequestInfo | URL, init?: RequestInit) =>
+          await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            )
+          }),
+      ),
+    )
+    sessionStorage.setItem('shopflow.refreshToken', 'refresh-1')
+
+    const pending = restoreSession()
+    await vi.advanceTimersByTimeAsync(REFRESH_TIMEOUT_MS)
+
+    await expect(pending).resolves.toBe(false)
+    // A timeout is not an expired session, so the token survives for the user to try again.
+    expect(getRefreshToken()).toBe('refresh-1')
+    vi.useRealTimers()
   })
 })

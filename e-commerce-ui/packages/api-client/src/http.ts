@@ -1,7 +1,7 @@
 import { getBaseUrl } from './config'
 import { ApiError, NetworkError, toApiError } from './problem'
 import { ensureFresh } from './refresh'
-import { getAccessToken } from './tokens'
+import { emitAuthExpired, getAccessToken } from './tokens'
 
 export type QueryValue = string | number | boolean | undefined | null
 
@@ -26,6 +26,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     // Throws if the refresh fails, which is what surfaces the expired session to the caller.
     const accessToken = await ensureFresh()
     response = await send(url, method, body, accessToken, signal)
+
+    // Refused again on a token the server had just minted: retrying cannot help, so end the session
+    // rather than leave the caller with an error whose Retry loops 401 -> refresh -> 401 forever.
+    if (response.status === 401) emitAuthExpired()
   }
 
   if (!response.ok) throw await toApiError(response)
