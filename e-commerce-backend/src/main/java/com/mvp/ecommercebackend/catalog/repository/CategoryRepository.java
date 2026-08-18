@@ -20,4 +20,7 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
      */
     @EntityGraph(attributePaths = "categoryTypes")
     List<Category> findAllByOrderByNameAsc();
+
+    /** Backs the admin duplicate check, which reports 409 rather than a constraint violation. */
+    boolean existsByCode(String code);
 }

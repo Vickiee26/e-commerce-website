@@ -1,6 +1,5 @@
 package com.mvp.ecommercebackend.commerce;
 
-import com.mvp.ecommercebackend.auth.TokenService;
 import com.mvp.ecommercebackend.auth.entity.User;
 import com.mvp.ecommercebackend.catalog.entity.CategoryType;
 import com.mvp.ecommercebackend.catalog.entity.Product;
@@ -26,13 +25,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CartControllerIT extends AbstractIntegrationTest {
 
     private static final String PROBLEM_JSON = "application/problem+json";
-
-    @Autowired
-    private TokenService tokenService;
-
-    private String bearer(User user) {
-        return "Bearer " + tokenService.generateAccessToken(user);
-    }
 
     private User customer(String email) {
         return testData.createCustomer(email, "correct-horse-battery");

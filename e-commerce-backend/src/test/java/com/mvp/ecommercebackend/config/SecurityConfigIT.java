@@ -29,17 +29,10 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     private static final String PROBLEM_JSON = "application/problem+json";
 
     @Autowired
-    private TokenService tokenService;
-
-    @Autowired
     private JwtProperties jwtProperties;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
-
-    private String bearer(User user) {
-        return "Bearer " + tokenService.generateAccessToken(user);
-    }
 
     @Test
     void allowsAnonymousAccessToPublicGetEndpoints() throws Exception {

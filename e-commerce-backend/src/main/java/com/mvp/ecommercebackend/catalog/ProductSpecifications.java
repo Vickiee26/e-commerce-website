@@ -40,6 +40,17 @@ final class ProductSpecifications {
                 builder.like(builder.lower(root.get("name")), pattern, ESCAPE);
     }
 
+    /**
+     * Excludes archived products.
+     *
+     * <p>Applied unconditionally by {@code ProductService.filters}, not as an optional filter: the
+     * public listing has no legitimate reason to show a retired product, and making it opt-out would
+     * put one query parameter between a customer and products that are not for sale.
+     */
+    static Specification<Product> notArchived() {
+        return (root, query, builder) -> builder.isNull(root.get("archivedAt"));
+    }
+
     private static String escapeWildcards(String term) {
         return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }

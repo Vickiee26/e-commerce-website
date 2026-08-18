@@ -1,6 +1,5 @@
 package com.mvp.ecommercebackend.user;
 
-import com.mvp.ecommercebackend.auth.TokenService;
 import com.mvp.ecommercebackend.auth.entity.User;
 import com.mvp.ecommercebackend.auth.repository.UserRepository;
 import com.mvp.ecommercebackend.support.AbstractIntegrationTest;
@@ -21,14 +20,7 @@ class MeControllerIT extends AbstractIntegrationTest {
     private static final String PROBLEM_JSON = "application/problem+json";
 
     @Autowired
-    private TokenService tokenService;
-
-    @Autowired
     private UserRepository userRepository;
-
-    private String bearer(User user) {
-        return "Bearer " + tokenService.generateAccessToken(user);
-    }
 
     @Test
     void requiresAuthentication() throws Exception {

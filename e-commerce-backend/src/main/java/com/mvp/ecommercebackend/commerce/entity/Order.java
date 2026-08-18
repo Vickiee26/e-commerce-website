@@ -72,6 +72,16 @@ public class Order extends BaseEntity {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    @Column(name = "shipped_at")
+    private Instant shippedAt;
+
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
+    /** The carrier's consignment number. Free text: every carrier formats it differently. */
+    @Column(name = "tracking_reference", length = 100)
+    private String trackingReference;
+
     /** No orphanRemoval: a line is never removed from a placed order. */
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();

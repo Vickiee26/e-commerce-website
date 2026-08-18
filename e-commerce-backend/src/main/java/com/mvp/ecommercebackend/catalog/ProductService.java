@@ -41,13 +41,24 @@ public class ProductService {
     public ProductDto getProductById(UUID id) {
         Product product = productRepository.findWithCategoriesById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product Not Found!"));
+        // 404, not 410 or an empty body: to a customer an archived product does not exist, and the
+        // same message an unknown id gets means the endpoint does not leak that it ever did.
+        if (product.getArchivedAt() != null) {
+            throw new ResourceNotFoundException("Product Not Found!");
+        }
         ProductDto productDto = productMapper.mapProductToDto(product);
         productDto.setCategoryId(product.getCategory().getId());
         productDto.setCategoryName(product.getCategory().getName());
         productDto.setCategoryTypeId(product.getCategoryType().getId());
         productDto.setCategoryTypeName(product.getCategoryType().getName());
-        productDto.setVariants(productMapper.mapProductVariantListToDto(product.getProductVariants()));
-        productDto.setProductResources(productMapper.mapProductResourcesListDto(product.getResources()));
+        // Archived variants are filtered out here rather than in the mapper: this list is what a
+        // storefront renders as buyable options, so an unbuyable one has no business being in it.
+        productDto.setVariants(productMapper.mapProductVariantListToDto(
+                product.getProductVariants().stream()
+                        .filter(variant -> variant.getArchivedAt() == null)
+                        .toList()));
+        productDto.setProductResources(
+                productMapper.mapProductResourcesListDto(product.getResources()));
         return productDto;
     }
 
@@ -78,7 +89,9 @@ public class ProductService {
     }
 
     private Specification<Product> filters(UUID categoryId, UUID categoryTypeId, String searchTerm) {
+        // Always first and never optional: archived products are not for sale.
         List<Specification<Product>> filters = new ArrayList<>();
+        filters.add(ProductSpecifications.notArchived());
         if (categoryId != null) {
             filters.add(ProductSpecifications.inCategory(categoryId));
         }
@@ -88,7 +101,7 @@ public class ProductService {
         if (searchTerm != null && !searchTerm.isBlank()) {
             filters.add(ProductSpecifications.nameContains(searchTerm.trim()));
         }
-        return filters.isEmpty() ? Specification.unrestricted() : Specification.allOf(filters);
+        return Specification.allOf(filters);
     }
 
     /**

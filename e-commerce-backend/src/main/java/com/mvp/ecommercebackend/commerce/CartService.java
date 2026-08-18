@@ -14,6 +14,7 @@ import com.mvp.ecommercebackend.commerce.entity.CartItem;
 import com.mvp.ecommercebackend.commerce.repository.CartItemRepository;
 import com.mvp.ecommercebackend.commerce.repository.CartRepository;
 import com.mvp.ecommercebackend.common.InsufficientStockException;
+import com.mvp.ecommercebackend.common.InvalidOrderStateException;
 import com.mvp.ecommercebackend.common.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,6 +68,7 @@ public class CartService {
         Cart cart = cartRepository.findByUserId(userId).orElseGet(() -> createCart(userId));
         ProductVariant variant = variantRepository.findWithProductById(request.variantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product Variant Not Found!"));
+        requireSellable(variant);
 
         CartItem existing = cart.getItems().stream()
                 .filter(item -> item.getVariant().getId().equals(variant.getId()))
@@ -91,6 +93,7 @@ public class CartService {
     @Transactional
     public CartResponse updateItem(UUID userId, UUID itemId, UpdateCartItemRequest request) {
         CartItem item = requireOwnedItem(userId, itemId);
+        requireSellable(item.getVariant());
         requireStock(item.getVariant(), request.quantity());
         item.setQuantity(request.quantity());
         cartItemRepository.saveAndFlush(item);
@@ -126,6 +129,23 @@ public class CartService {
     private CartItem requireOwnedItem(UUID userId, UUID itemId) {
         return cartItemRepository.findByIdAndCartUserId(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cart Item Not Found!"));
+    }
+
+    /**
+     * Rejects a variant that is no longer for sale.
+     *
+     * <p>Called from both {@code addItem} and {@code updateItem}: both are ways to put more of a
+     * variant in a cart, so guarding only one leaves the other open.
+     *
+     * <p>An archived product hides its variants regardless of their own flags, which is why both are
+     * checked. {@code variant.getProduct()} costs no query — {@code findWithProductById} join-fetches
+     * it, and {@code updateItem} reaches it through a variant already in the persistence context.
+     */
+    private static void requireSellable(ProductVariant variant) {
+        if (variant.getArchivedAt() != null || variant.getProduct().getArchivedAt() != null) {
+            throw new InvalidOrderStateException(
+                    "Variant " + variant.getId() + " is no longer available");
+        }
     }
 
     private static void requireStock(ProductVariant variant, int wanted) {

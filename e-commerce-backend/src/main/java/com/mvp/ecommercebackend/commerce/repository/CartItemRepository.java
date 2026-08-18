@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,7 +42,9 @@ public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
                    product.price as unitPrice,
                    variant.color as color,
                    variant.size as size,
-                   item.quantity as quantity
+                   item.quantity as quantity,
+                   product.archivedAt as productArchivedAt,
+                   variant.archivedAt as variantArchivedAt
             from CartItem item
             join item.variant variant
             join variant.product product
@@ -82,5 +85,13 @@ public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
         String getSize();
 
         int getQuantity();
+
+        /**
+         * Archive flags, so checkout can refuse a variant retired after it was added to the cart.
+         * Scalars for the same reason as everything else here: nothing may be cached to go stale.
+         */
+        Instant getProductArchivedAt();
+
+        Instant getVariantArchivedAt();
     }
 }

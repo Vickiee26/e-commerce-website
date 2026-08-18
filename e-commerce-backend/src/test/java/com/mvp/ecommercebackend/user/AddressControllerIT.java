@@ -1,6 +1,5 @@
 package com.mvp.ecommercebackend.user;
 
-import com.mvp.ecommercebackend.auth.TokenService;
 import com.mvp.ecommercebackend.auth.entity.User;
 import com.mvp.ecommercebackend.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
@@ -30,13 +29,6 @@ class AddressControllerIT extends AbstractIntegrationTest {
              "line2":"Flat 3","city":"London","state":"Greater London","postalCode":"E1 6AN",
              "country":"GB"}
             """;
-
-    @Autowired
-    private TokenService tokenService;
-
-    private String bearer(User user) {
-        return "Bearer " + tokenService.generateAccessToken(user);
-    }
 
     /** Creates an address over HTTP and returns its id, so tests exercise the real path. */
     private UUID createAddress(User user, String body) throws Exception {

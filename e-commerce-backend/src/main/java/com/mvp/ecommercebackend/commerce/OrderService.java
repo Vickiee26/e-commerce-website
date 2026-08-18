@@ -122,6 +122,9 @@ public class OrderService {
                 // key with ON DELETE CASCADE, so a deleted variant takes its cart lines with it.
                 throw new ResourceNotFoundException("Product Variant Not Found!");
             }
+            // Re-checked here and not only at cart-add: a variant can be archived while it sits in a
+            // cart, and nothing else revalidates cart contents.
+            requireSellable(line);
             takeStock(variant, line.getQuantity(), line.getProductName());
 
             OrderItem item = new OrderItem();
@@ -195,9 +198,34 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse cancel(UUID userId, UUID orderId) {
-        Order order = requireOwnedOrder(userId, orderId);
-        requirePendingPayment(order, "cancelled");
+        return cancelOrder(requireOwnedOrder(userId, orderId));
+    }
 
+    /**
+     * Cancels any customer's unpaid order.
+     *
+     * <p>Lives here rather than in {@code AdminOrderService} so the stock-returning loop and its lock
+     * ordering exist in exactly one place. The only difference from {@link #cancel} is the absent
+     * owner scope; the refusal to cancel a paid order is identical, because a refund needs a record
+     * of who authorised it and how much came back.
+     */
+    @Transactional
+    public OrderResponse cancelAsAdministrator(UUID orderId) {
+        Order order = orderRepository.findWithItemsById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order Not Found!"));
+        return cancelOrder(order);
+    }
+
+    private OrderResponse cancelOrder(Order order) {
+        requirePendingPayment(order, "cancelled");
+        restoreStock(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(clock.instant());
+        return toResponse(orderRepository.saveAndFlush(order));
+    }
+
+    /** Puts an unpaid order's units back on the shelf, under the same lock checkout uses. */
+    private void restoreStock(Order order) {
         List<UUID> variantIds = order.getItems().stream()
                 .map(OrderItem::getVariantId)
                 .filter(Objects::nonNull)
@@ -211,10 +239,6 @@ public class OrderService {
                 variant.setStockQuantity(variant.getStockQuantity() + item.getQuantity());
             }
         }
-
-        order.setStatus(OrderStatus.CANCELLED);
-        order.setCancelledAt(clock.instant());
-        return toResponse(orderRepository.saveAndFlush(order));
     }
 
     private Order requireOwnedOrder(UUID userId, UUID orderId) {
@@ -222,11 +246,33 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order Not Found!"));
     }
 
-    private static void requirePendingPayment(Order order, String attemptedAction) {
-        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+    private static void requireSellable(CartItemRepository.CheckoutLine line) {
+        if (line.getVariantArchivedAt() != null || line.getProductArchivedAt() != null) {
+            // The product name, like takeStock: the customer is looking at a checkout page listing
+            // several items and needs to know which one to remove.
+            throw new InvalidOrderStateException(
+                    line.getProductName() + " is no longer available");
+        }
+    }
+
+    /**
+     * Refuses an action unless the order is in {@code expected}.
+     *
+     * <p>Enforced here and not left to {@code ck_orders_status}: the CHECK constraint says which
+     * values are legal, not which moves are, and it would happily accept SHIPPED on an unpaid order.
+     *
+     * <p>Public and static so {@code AdminOrderService} can share it. Two functions answering "is
+     * this order in state X" would drift apart.
+     */
+    public static void requireStatus(Order order, OrderStatus expected, String attemptedAction) {
+        if (order.getStatus() != expected) {
             throw new InvalidOrderStateException("Order " + order.getOrderNumber() + " is "
                     + order.getStatus() + " and cannot be " + attemptedAction);
         }
+    }
+
+    private static void requirePendingPayment(Order order, String attemptedAction) {
+        requireStatus(order, OrderStatus.PENDING_PAYMENT, attemptedAction);
     }
 
     /**

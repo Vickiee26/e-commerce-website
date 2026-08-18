@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,4 +45,11 @@ public class Product extends BaseEntity {
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
     private List<Resource> resources = new ArrayList<>();
+
+    /**
+     * Set instead of deleting the row. Archiving hides the product from the public catalogue while
+     * leaving order history and live carts intact.
+     */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
 }
