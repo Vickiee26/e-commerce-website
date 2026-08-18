@@ -1,8 +1,7 @@
-import type { Category } from '@shopflow/api-client'
 import { useState, type ReactElement } from 'react'
-import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
 import { EmptyState, ErrorPanel, Skeleton } from '../../components/QueryStates'
+import { CategoryCard } from './CategoryCard'
 import { CategoryFormDialog } from './CategoryFormDialog'
 import { useCategories } from './queries'
 
@@ -41,36 +40,5 @@ export function CategoriesPage(): ReactElement {
 
       <CategoryFormDialog open={createOpen} onClose={() => setCreateOpen(false)} />
     </section>
-  )
-}
-
-/** Task 8 adds the edit, delete and add-type actions to this card. */
-export function CategoryCard({ category }: { category: Category }): ReactElement {
-  return (
-    <li aria-label={category.name} className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="font-semibold text-slate-900">{category.name}</h2>
-          <p className="text-xs text-slate-500">{category.code}</p>
-        </div>
-        {category.types.length === 0 ? (
-          <Badge tone="warning">No types — cannot hold products</Badge>
-        ) : null}
-      </div>
-
-      {category.description !== undefined ? (
-        <p className="mt-2 text-sm text-slate-600">{category.description}</p>
-      ) : null}
-
-      {category.types.length > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {category.types.map((type) => (
-            <li key={type.id}>
-              <Badge>{`${type.name} (${type.code})`}</Badge>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </li>
   )
 }

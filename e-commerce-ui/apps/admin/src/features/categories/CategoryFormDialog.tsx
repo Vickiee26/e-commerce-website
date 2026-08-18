@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { isApiError } from '@shopflow/api-client'
+import { isApiError, type Category } from '@shopflow/api-client'
 import { useEffect, useState, type ReactElement } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -9,7 +9,7 @@ import { Field, TextInput, inputClass } from '../../components/Field'
 import { useToast } from '../../components/Toast'
 import { applyApiErrorToForm } from '../../lib/formErrors'
 import { CODE_PATTERN, toCode } from '../../lib/slug'
-import { useCreateCategory } from './queries'
+import { useCreateCategory, useUpdateCategory } from './queries'
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required').max(255, 'Must be 255 characters or fewer'),
@@ -28,14 +28,19 @@ const CATEGORY_FIELDS = ['name', 'code', 'description'] as const
 export function CategoryFormDialog({
   open,
   onClose,
+  category,
 }: {
   open: boolean
   onClose: () => void
+  category?: Category
 }): ReactElement | null {
+  const editing = category !== undefined
   const [formMessage, setFormMessage] = useState<string | null>(null)
   const [codeEdited, setCodeEdited] = useState(false)
   const create = useCreateCategory()
+  const update = useUpdateCategory()
   const showToast = useToast()
+  const pending = create.isPending || update.isPending
 
   const { register, handleSubmit, setError, setValue, reset, watch, formState } =
     useForm<CategoryValues>({
@@ -45,47 +50,64 @@ export function CategoryFormDialog({
 
   const name = watch('name')
 
-  // The code tracks the name until the operator takes it over, then it is theirs.
+  // The code tracks the name until the operator takes it over — and never in edit mode, where the
+  // code is fixed and re-slugging it would be a lie.
   useEffect(() => {
-    if (!codeEdited) setValue('code', toCode(name))
-  }, [name, codeEdited, setValue])
+    if (!editing && !codeEdited) setValue('code', toCode(name))
+  }, [name, codeEdited, editing, setValue])
 
-  // Reopening starts clean rather than inheriting a failed attempt.
+  // Reopening starts from the record, not from a failed attempt.
   useEffect(() => {
-    if (open) {
-      reset({ name: '', code: '', description: '' })
-      setCodeEdited(false)
-      setFormMessage(null)
-    }
-  }, [open, reset])
+    if (!open) return
+    reset({
+      name: category?.name ?? '',
+      code: category?.code ?? '',
+      description: category?.description ?? '',
+    })
+    setCodeEdited(false)
+    setFormMessage(null)
+  }, [open, category, reset])
 
   const codeRegistration = register('code')
 
   const onSubmit = handleSubmit((values) => {
     setFormMessage(null)
+    const description = values.description === '' ? undefined : values.description
+
+    const onError = (error: unknown): void => {
+      // `code` is a category's only unique field, so a 409 can only be about it. The backend sends
+      // no errors[] for a conflict, so the mapping happens here.
+      if (isApiError(error) && error.status === 409) {
+        setError('code', { type: 'server', message: error.detail ?? 'That code is already used' })
+        return
+      }
+      setFormMessage(applyApiErrorToForm<CategoryValues>(error, setError, CATEGORY_FIELDS))
+    }
+
+    if (category !== undefined) {
+      // Send description even when empty: the backend treats null as "leave alone" and '' as
+      // "clear it", so '' is how the operator removes a description.
+      update.mutate(
+        { id: category.id, body: { name: values.name, description: values.description } },
+        {
+          onSuccess: () => {
+            showToast(`Category "${values.name}" updated`)
+            onClose()
+          },
+          onError,
+        },
+      )
+      return
+    }
+
     create.mutate(
-      {
-        name: values.name,
-        code: values.code,
-        description: values.description === '' ? undefined : values.description,
-      },
+      { name: values.name, code: values.code, description },
       {
         onSuccess: () => {
           showToast(`Category "${values.name}" created`)
           onClose()
         },
-        onError: (error) => {
-          // `code` is the only unique field on a category, so a 409 can only be about it. The
-          // backend sends no errors[] for a conflict, so the mapping happens here.
-          if (isApiError(error) && error.status === 409) {
-            setError('code', {
-              type: 'server',
-              message: error.detail ?? 'That code is already used',
-            })
-            return
-          }
-          setFormMessage(applyApiErrorToForm<CategoryValues>(error, setError, CATEGORY_FIELDS))
-        },
+        onError,
       },
     )
   })
@@ -93,15 +115,15 @@ export function CategoryFormDialog({
   return (
     <Dialog
       open={open}
-      title="New category"
+      title={editing ? `Edit ${category.name}` : 'New category'}
       onClose={onClose}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={create.isPending}>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" form="category-form" loading={create.isPending}>
-            Create category
+          <Button type="submit" form="category-form" loading={pending}>
+            {editing ? 'Save changes' : 'Create category'}
           </Button>
         </>
       }
@@ -120,10 +142,15 @@ export function CategoryFormDialog({
           htmlFor="category-code"
           required
           error={formState.errors.code?.message}
-          hint="Lower-case letters, digits and single hyphens. Permanent once created."
+          hint={
+            editing
+              ? 'Permanent. Create a new category if you need a different code.'
+              : 'Lower-case letters, digits and single hyphens. Permanent once created.'
+          }
         >
           <TextInput
             id="category-code"
+            disabled={editing}
             invalid={formState.errors.code !== undefined}
             {...codeRegistration}
             onChange={(event) => {
@@ -133,7 +160,11 @@ export function CategoryFormDialog({
           />
         </Field>
 
-        <Field label="Description" htmlFor="category-description" error={formState.errors.description?.message}>
+        <Field
+          label="Description"
+          htmlFor="category-description"
+          error={formState.errors.description?.message}
+        >
           <textarea
             id="category-description"
             rows={3}
