@@ -22,9 +22,9 @@ target/
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
 
-# web workspace
+# e-commerce-ui workspace (the pnpm workspace root for both frontends)
 node_modules/
-web/**/dist/
-web/**/.vite/
-web/apps/admin/test-results/
-web/apps/admin/playwright-report/
+e-commerce-ui/**/dist/
+e-commerce-ui/**/.vite/
+e-commerce-ui/apps/admin/test-results/
+e-commerce-ui/apps/admin/playwright-report/

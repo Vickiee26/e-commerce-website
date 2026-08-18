@@ -36,7 +36,7 @@ Verified against the running backend on 2026-08-17:
 |---|---|---|
 | Build order | Admin before storefront | Only the admin API can populate the empty catalogue. A storefront with no products cannot be built or judged. |
 | Repository layout | One pnpm workspace, two apps, shared client | Token refresh and generated types are written once instead of diverging across two copies. |
-| Workspace location | `web/` in the existing repo | `docs/superpowers/specs/` already lives at this root and the backend is itself a subfolder. Separate build outputs, so deploys stay independent. |
+| Workspace location | `e-commerce-ui/` in the existing repo | `docs/superpowers/specs/` already lives at this root and the backend is itself a subfolder. Separate build outputs, so deploys stay independent. |
 | Framework | Vite + React + TypeScript SPA | Fastest dev loop, static-file deploy, and the dev proxy closes the CORS gap without a backend change. An admin portal needs no SEO. |
 | `packages/ui` | **Not created in v1** | It would have one consumer. Components live in `apps/admin` and get extracted when the storefront needs them. |
 | Admin v1 scope | Catalogue only | Unblocks the storefront sooner. Orders and audit are v2. |
@@ -83,7 +83,7 @@ library's opinions about tables and dialogs would fight the mobile/desktop split
 ## 4. Workspace structure
 
 ```
-web/
+e-commerce-ui/
 ├─ .nvmrc                        24
 ├─ pnpm-workspace.yaml
 ├─ package.json                  scripts delegating to apps
@@ -516,7 +516,7 @@ Verified on this machine 2026-08-17. All four are setup steps, not code.
 2. **Node is 18.20.7**, which is past end-of-life and below every floor here. The binding
    constraints are React Router 8 (`>=22.22.0`), jsdom 30 (`^24.15.0`) and Vitest 4
    (`>=24`), so **Node 24** is the floor, not 20 or 22. `nvm` is installed; use
-   `nvm install 24` (24.19.0 is Latest LTS) and pin it with `web/.nvmrc`.
+   `nvm install 24` (24.19.0 is Latest LTS) and pin it with `e-commerce-ui/.nvmrc`.
 3. **pnpm is not installed.** `corepack enable pnpm` (corepack ships with the current Node).
 4. **No backend CORS.** The Vite dev server proxies `/api` and `/auth` to
    `http://localhost:8080`, making requests same-origin in development. No backend change.

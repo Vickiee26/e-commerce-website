@@ -4,7 +4,7 @@
 
 **Goal:** Build an admin web portal that can populate and maintain the currently empty ShopFlow catalogue — categories, category types, products, variants, stock and images — usable on a 390px phone and a 1440px laptop.
 
-**Architecture:** A pnpm workspace at `web/` holding one shared package and one app. `packages/api-client` owns everything that talks HTTP: generated OpenAPI types, a `fetch` wrapper that turns every non-2xx into a single `ApiError`, the token store, and single-flight refresh. `apps/admin` is a Vite SPA whose dev server proxies `/api` and `/auth` to `http://localhost:8080`, closing the CORS gap with no backend change. TanStack Query owns all server state; the only global client state is the auth session. Each feature folder (`auth`, `categories`, `products`) owns its own queries, mutations, forms and screens and never imports from a sibling.
+**Architecture:** A pnpm workspace at `e-commerce-ui/` holding one shared package and one app. `packages/api-client` owns everything that talks HTTP: generated OpenAPI types, a `fetch` wrapper that turns every non-2xx into a single `ApiError`, the token store, and single-flight refresh. `apps/admin` is a Vite SPA whose dev server proxies `/api` and `/auth` to `http://localhost:8080`, closing the CORS gap with no backend change. TanStack Query owns all server state; the only global client state is the auth session. Each feature folder (`auth`, `categories`, `products`) owns its own queries, mutations, forms and screens and never imports from a sibling.
 
 **Tech Stack:** Node 24 · pnpm 11 · Vite 8 · React 19 · TypeScript 7 (strict) · React Router 8 · TanStack Query 5 · Tailwind CSS 4 · react-hook-form 7 + zod 4 · openapi-typescript 7 · Vitest 4 + React Testing Library + MSW 2 · Playwright 1.62
 
@@ -14,8 +14,8 @@
 
 Every task's requirements implicitly include this section. Values are copied verbatim from the spec; where a value came from backend source, the file is named so you can re-check it.
 
-- **Node 24 is the floor.** React Router 8 requires `>=22.22.0`, jsdom 30 requires `^24.15.0`, Vitest 4 requires `>=24`. Pin with `web/.nvmrc` containing `24`.
-- **pnpm 11 enforces a `minimumReleaseAge` cooldown of roughly 24 hours.** A dependency range that resolves to a version published today fails the install with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`. Pick a seasoned version, or wait the cooldown out. **Never add `minimumReleaseAgeExclude`** — it disables a supply-chain check exactly where it is working, since a freshly published version cannot be told apart from a compromised one by reading it. Likewise, `allowBuilds` entries in `web/pnpm-workspace.yaml` must hold real booleans; pnpm writes a placeholder string there that must be replaced with a decision, not committed as-is.
+- **Node 24 is the floor.** React Router 8 requires `>=22.22.0`, jsdom 30 requires `^24.15.0`, Vitest 4 requires `>=24`. Pin with `e-commerce-ui/.nvmrc` containing `24`.
+- **pnpm 11 enforces a `minimumReleaseAge` cooldown of roughly 24 hours.** A dependency range that resolves to a version published today fails the install with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`. Pick a seasoned version, or wait the cooldown out. **Never add `minimumReleaseAgeExclude`** — it disables a supply-chain check exactly where it is working, since a freshly published version cannot be told apart from a compromised one by reading it. Likewise, `allowBuilds` entries in `e-commerce-ui/pnpm-workspace.yaml` must hold real booleans; pnpm writes a placeholder string there that must be replaced with a decision, not committed as-is.
 - **Backend base URL is `http://localhost:8080`.** There is no CORS configuration in `SecurityConfig.java` — it never calls `.cors(...)`. All browser traffic must go through the Vite dev proxy so it is same-origin. Never hardcode `http://localhost:8080` in app code.
 - **`GET /api/admin/products` parameters are validated with `@Pattern`; a wrong value is a 400, not a fallback.** `archived` ∈ `exclude` | `only` | `all` (default `exclude`) — **not a boolean**. `sort` ∈ `name` | `price` | `createdAt` (default `name`). `direction` ∈ `asc` | `desc` (default `asc`). `q` max 100 chars. `page` >= 0. `size` 1–100 inclusive.
 - **`categoryTypeId` is required on every product.** A category with zero types can hold zero products.
@@ -34,7 +34,7 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **One breakpoint: Tailwind `md` (768px).** One query feeds both presentations — `hidden md:table` beside `md:hidden` cards. Minimum 44px touch targets. No horizontally scrolling tables.
 - **Every query renders three explicit states:** loading skeleton, error panel with Retry, empty state with a primary call to action.
 - **Server `fieldErrors` merge into form errors, never replace them.** Each `{field, message}` maps to `setError(field, {message})`; unmatched entries plus `detail` become a form-level message.
-- **`web/packages/api-client/src/generated.ts` is generated output. Never hand-edit it.** Regenerate with `pnpm gen:api` against a running backend.
+- **`e-commerce-ui/packages/api-client/src/generated.ts` is generated output. Never hand-edit it.** Regenerate with `pnpm gen:api` against a running backend.
 - **Secrets:** `e-commerce-backend/.env` is gitignored and must never be committed. Never print `ADMIN_PASSWORD` in terminal output or commit messages.
 
 ## File Structure
@@ -42,7 +42,7 @@ Every task's requirements implicitly include this section. Values are copied ver
 ```
 .gitignore                                    modified: node_modules, playwright artefacts
 e-commerce-backend/.env                       modified: ADMIN_EMAIL, ADMIN_PASSWORD (never committed)
-web/
+e-commerce-ui/
 ├─ .nvmrc                                     24
 ├─ pnpm-workspace.yaml                        packages/*, apps/*
 ├─ package.json                               root scripts, engines
@@ -142,15 +142,15 @@ Nothing in this project can be tested until an `ADMIN` account exists, so the ac
 **Files:**
 - Modify: `e-commerce-backend/.env` (never committed)
 - Modify: `.gitignore`
-- Create: `web/.nvmrc`
-- Create: `web/pnpm-workspace.yaml`
-- Create: `web/package.json`
-- Create: `web/tsconfig.base.json`
-- Create: `web/README.md`
+- Create: `e-commerce-ui/.nvmrc`
+- Create: `e-commerce-ui/pnpm-workspace.yaml`
+- Create: `e-commerce-ui/package.json`
+- Create: `e-commerce-ui/tsconfig.base.json`
+- Create: `e-commerce-ui/README.md`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: a working `pnpm` in `web/`; `web/tsconfig.base.json` for both projects to `extends`; an admin account whose credentials live only in `e-commerce-backend/.env`; the root scripts `pnpm dev`, `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm gen:api`.
+- Produces: a working `pnpm` in `e-commerce-ui/`; `e-commerce-ui/tsconfig.base.json` for both projects to `extends`; an admin account whose credentials live only in `e-commerce-backend/.env`; the root scripts `pnpm dev`, `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm gen:api`.
 
 - [ ] **Step 1: Verify no admin account exists yet**
 
@@ -211,13 +211,13 @@ Expected: `node -v` prints `v24.x` (24.19.0 is Latest LTS), `pnpm -v` prints `11
 
 - [ ] **Step 6: Create the workspace root files**
 
-`web/.nvmrc`:
+`e-commerce-ui/.nvmrc`:
 
 ```
 24
 ```
 
-`web/pnpm-workspace.yaml`:
+`e-commerce-ui/pnpm-workspace.yaml`:
 
 ```yaml
 packages:
@@ -225,7 +225,7 @@ packages:
   - 'apps/*'
 ```
 
-`web/package.json`:
+`e-commerce-ui/package.json`:
 
 ```json
 {
@@ -249,7 +249,7 @@ packages:
 }
 ```
 
-`web/tsconfig.base.json`:
+`e-commerce-ui/tsconfig.base.json`:
 
 ```json
 {
@@ -275,7 +275,7 @@ packages:
 }
 ```
 
-`web/README.md`:
+`e-commerce-ui/README.md`:
 
 ```markdown
 # ShopFlow Web
@@ -310,7 +310,7 @@ backend. The output is committed; never hand-edit it.
 - [ ] **Step 7: Install and verify the workspace resolves**
 
 ```bash
-cd web
+cd e-commerce-ui
 pnpm install
 pnpm exec tsc -v
 ```
@@ -324,10 +324,10 @@ Append to the repository-root `.gitignore`:
 ```gitignore
 # web workspace
 node_modules/
-web/**/dist/
-web/**/.vite/
-web/apps/admin/test-results/
-web/apps/admin/playwright-report/
+e-commerce-ui/**/dist/
+e-commerce-ui/**/.vite/
+e-commerce-ui/apps/admin/test-results/
+e-commerce-ui/apps/admin/playwright-report/
 ```
 
 - [ ] **Step 9: Confirm nothing secret is staged**
@@ -335,15 +335,15 @@ web/apps/admin/playwright-report/
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 git status --short
-git check-ignore -v e-commerce-backend/.env web/node_modules
+git check-ignore -v e-commerce-backend/.env e-commerce-ui/node_modules
 ```
 
-Expected: `git status` lists only `.gitignore` and the new `web/` files — **not** `e-commerce-backend/.env` and **not** anything under `node_modules`. `git check-ignore` must print a matching rule for both paths.
+Expected: `git status` lists only `.gitignore` and the new `e-commerce-ui/` files — **not** `e-commerce-backend/.env` and **not** anything under `node_modules`. `git check-ignore` must print a matching rule for both paths.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add .gitignore web/.nvmrc web/pnpm-workspace.yaml web/package.json web/tsconfig.base.json web/README.md
+git add .gitignore e-commerce-ui/.nvmrc e-commerce-ui/pnpm-workspace.yaml e-commerce-ui/package.json e-commerce-ui/tsconfig.base.json e-commerce-ui/README.md
 git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
 ```
 
@@ -352,17 +352,17 @@ git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
 ### Task 2: `api-client` — generated types and the error model
 
 **Files:**
-- Create: `web/packages/api-client/package.json`
-- Create: `web/packages/api-client/tsconfig.json`
-- Create: `web/packages/api-client/vitest.config.ts`
-- Create: `web/packages/api-client/src/generated.ts` (generated, committed, never hand-edited)
-- Create: `web/packages/api-client/src/problem.ts`
-- Create: `web/packages/api-client/src/schemas.ts`
-- Create: `web/packages/api-client/src/index.ts`
-- Test: `web/packages/api-client/src/problem.test.ts`
+- Create: `e-commerce-ui/packages/api-client/package.json`
+- Create: `e-commerce-ui/packages/api-client/tsconfig.json`
+- Create: `e-commerce-ui/packages/api-client/vitest.config.ts`
+- Create: `e-commerce-ui/packages/api-client/src/generated.ts` (generated, committed, never hand-edited)
+- Create: `e-commerce-ui/packages/api-client/src/problem.ts`
+- Create: `e-commerce-ui/packages/api-client/src/schemas.ts`
+- Create: `e-commerce-ui/packages/api-client/src/index.ts`
+- Test: `e-commerce-ui/packages/api-client/src/problem.test.ts`
 
 **Interfaces:**
-- Consumes: `web/tsconfig.base.json` from Task 1; a running backend at `http://localhost:8080` for `pnpm gen:api`.
+- Consumes: `e-commerce-ui/tsconfig.base.json` from Task 1; a running backend at `http://localhost:8080` for `pnpm gen:api`.
 - Produces, all exported from `@shopflow/api-client`:
   - `type FieldError = { field: string; message: string }`
   - `type ProblemDetail = { type?, title?, status?, detail?, instance?, errors?: FieldError[] }`
@@ -375,7 +375,7 @@ git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
 
 - [ ] **Step 1: Create the package manifest and configs**
 
-`web/packages/api-client/package.json`:
+`e-commerce-ui/packages/api-client/package.json`:
 
 ```json
 {
@@ -401,7 +401,7 @@ git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
 }
 ```
 
-`web/packages/api-client/tsconfig.json`:
+`e-commerce-ui/packages/api-client/tsconfig.json`:
 
 ```json
 {
@@ -417,7 +417,7 @@ git commit -m "chore(web): scaffold the pnpm workspace for the frontends"
 
 `DOM` is in `lib` for `fetch`, `Response` and `sessionStorage`. This package never imports React.
 
-`web/packages/api-client/vitest.config.ts`:
+`e-commerce-ui/packages/api-client/vitest.config.ts`:
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -437,7 +437,7 @@ jsdom rather than node, because Task 3 stores the refresh token in a real `sessi
 The backend from Task 1 must still be running.
 
 ```bash
-cd web
+cd e-commerce-ui
 pnpm install
 pnpm gen:api
 head -20 packages/api-client/src/generated.ts
@@ -448,7 +448,7 @@ Expected: `generated.ts` exists, starts with the "do not make direct changes" ba
 
 - [ ] **Step 3: Write the failing test**
 
-`web/packages/api-client/src/problem.test.ts`:
+`e-commerce-ui/packages/api-client/src/problem.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -534,7 +534,7 @@ describe('NetworkError', () => {
 - [ ] **Step 4: Run the test to verify it fails**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test
 ```
 
@@ -542,7 +542,7 @@ Expected: FAIL — `Failed to resolve import "./problem"`.
 
 - [ ] **Step 5: Write the implementation**
 
-`web/packages/api-client/src/problem.ts`:
+`e-commerce-ui/packages/api-client/src/problem.ts`:
 
 ```ts
 export type FieldError = { field: string; message: string }
@@ -622,7 +622,7 @@ export async function toApiError(response: Response): Promise<ApiError> {
 - [ ] **Step 6: Run the test to verify it passes**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test
 ```
 
@@ -632,7 +632,7 @@ Expected: PASS, 5 tests.
 
 The generated response schemas mark every property optional, because the backend's records carry no `required` metadata. Writing `product.name!` at every call site would spread that lie through the app, so narrow the always-present fields here, once. `RequireKeys` keys are checked against the generated type, so an API rename still breaks the build.
 
-`web/packages/api-client/src/schemas.ts`:
+`e-commerce-ui/packages/api-client/src/schemas.ts`:
 
 ```ts
 import type { components } from './generated'
@@ -717,7 +717,7 @@ export type AdminProductPage = RequireKeys<
 > & { content: AdminProductSummary[] }
 ```
 
-`web/packages/api-client/src/index.ts`:
+`e-commerce-ui/packages/api-client/src/index.ts`:
 
 ```ts
 export * from './problem'
@@ -727,7 +727,7 @@ export * from './schemas'
 - [ ] **Step 8: Typecheck**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm typecheck
 ```
 
@@ -737,7 +737,7 @@ Expected: no output, exit 0. An error naming a key in a `RequireKeys` list means
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/packages/api-client web/pnpm-lock.yaml
+git add e-commerce-ui/packages/api-client e-commerce-ui/pnpm-lock.yaml
 git commit -m "feat(api-client): generated types and a single ApiError for every failure"
 ```
 
@@ -748,13 +748,13 @@ git commit -m "feat(api-client): generated types and a single ApiError for every
 This task delivers acceptance criteria 2 and 3. The backend rotates refresh tokens and implements reuse detection, so two concurrent refreshes would present the same token twice and could kill the session. Single-flight is a correctness requirement, not an optimisation.
 
 **Files:**
-- Create: `web/packages/api-client/src/config.ts`
-- Create: `web/packages/api-client/src/tokens.ts`
-- Create: `web/packages/api-client/src/refresh.ts`
-- Create: `web/packages/api-client/src/http.ts`
-- Modify: `web/packages/api-client/src/index.ts`
-- Test: `web/packages/api-client/src/tokens.test.ts`
-- Test: `web/packages/api-client/src/http.test.ts`
+- Create: `e-commerce-ui/packages/api-client/src/config.ts`
+- Create: `e-commerce-ui/packages/api-client/src/tokens.ts`
+- Create: `e-commerce-ui/packages/api-client/src/refresh.ts`
+- Create: `e-commerce-ui/packages/api-client/src/http.ts`
+- Modify: `e-commerce-ui/packages/api-client/src/index.ts`
+- Test: `e-commerce-ui/packages/api-client/src/tokens.test.ts`
+- Test: `e-commerce-ui/packages/api-client/src/http.test.ts`
 
 **Interfaces:**
 - Consumes: `ApiError`, `NetworkError`, `toApiError` from `./problem`; `TokenPair` from `./schemas` (Task 2).
@@ -774,7 +774,7 @@ This task delivers acceptance criteria 2 and 3. The backend rotates refresh toke
 
 - [ ] **Step 1: Write the failing token-store test**
 
-`web/packages/api-client/src/tokens.test.ts`:
+`e-commerce-ui/packages/api-client/src/tokens.test.ts`:
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -831,7 +831,7 @@ describe('token store', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test tokens
 ```
 
@@ -839,7 +839,7 @@ Expected: FAIL — `Failed to resolve import "./tokens"`.
 
 - [ ] **Step 3: Write the config and token store**
 
-`web/packages/api-client/src/config.ts`:
+`e-commerce-ui/packages/api-client/src/config.ts`:
 
 ```ts
 let baseUrl = ''
@@ -858,7 +858,7 @@ export function getBaseUrl(): string {
 }
 ```
 
-`web/packages/api-client/src/tokens.ts`:
+`e-commerce-ui/packages/api-client/src/tokens.ts`:
 
 ```ts
 const REFRESH_TOKEN_KEY = 'shopflow.refreshToken'
@@ -914,7 +914,7 @@ export function emitAuthExpired(): void {
 - [ ] **Step 4: Run it to verify it passes**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test tokens
 ```
 
@@ -922,7 +922,7 @@ Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Write the failing request/refresh test**
 
-`web/packages/api-client/src/http.test.ts`:
+`e-commerce-ui/packages/api-client/src/http.test.ts`:
 
 ```ts
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -1103,7 +1103,7 @@ describe('single-flight refresh', () => {
 - [ ] **Step 6: Run it to verify it fails**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test http
 ```
 
@@ -1111,7 +1111,7 @@ Expected: FAIL — `Failed to resolve import "./http"`.
 
 - [ ] **Step 7: Write the single-flight refresh**
 
-`web/packages/api-client/src/refresh.ts`:
+`e-commerce-ui/packages/api-client/src/refresh.ts`:
 
 ```ts
 import { getBaseUrl } from './config'
@@ -1186,7 +1186,7 @@ export function resetRefreshState(): void {
 
 - [ ] **Step 8: Write the request wrapper**
 
-`web/packages/api-client/src/http.ts`:
+`e-commerce-ui/packages/api-client/src/http.ts`:
 
 ```ts
 import { getBaseUrl } from './config'
@@ -1268,7 +1268,7 @@ async function readBody<T>(response: Response): Promise<T> {
 
 - [ ] **Step 9: Extend the package surface**
 
-`web/packages/api-client/src/index.ts`:
+`e-commerce-ui/packages/api-client/src/index.ts`:
 
 ```ts
 export * from './config'
@@ -1282,7 +1282,7 @@ export * from './tokens'
 - [ ] **Step 10: Run the whole package and typecheck**
 
 ```bash
-cd web/packages/api-client
+cd e-commerce-ui/packages/api-client
 pnpm test
 pnpm typecheck
 ```
@@ -1293,7 +1293,7 @@ Expected: PASS, 16 tests across three files; typecheck silent. The two counted-c
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/packages/api-client web/pnpm-lock.yaml
+git add e-commerce-ui/packages/api-client e-commerce-ui/pnpm-lock.yaml
 git commit -m "feat(api-client): token store and single-flight refresh behind one request wrapper"
 ```
 
@@ -1304,23 +1304,23 @@ git commit -m "feat(api-client): token store and single-flight refresh behind on
 The visible deliverable is a booting app whose not-found route works and whose dev server successfully proxies to the backend. From Task 5 the nav links point at routes that do not exist yet; until their task lands they resolve to the not-found page, which is expected.
 
 **Files:**
-- Create: `web/apps/admin/package.json`
-- Create: `web/apps/admin/tsconfig.json`
-- Create: `web/apps/admin/vite.config.ts`
-- Create: `web/apps/admin/vitest.config.ts`
-- Create: `web/apps/admin/index.html`
-- Create: `web/apps/admin/src/main.tsx`
-- Create: `web/apps/admin/src/App.tsx`
-- Create: `web/apps/admin/src/index.css`
-- Create: `web/apps/admin/src/lib/queryClient.ts`
-- Create: `web/apps/admin/src/lib/format.ts`
-- Create: `web/apps/admin/src/routes/router.tsx`
-- Create: `web/apps/admin/src/routes/NotFoundPage.tsx`
-- Create: `web/apps/admin/src/test/setup.ts`
-- Create: `web/apps/admin/src/test/msw.ts`
-- Create: `web/apps/admin/src/test/render.tsx`
-- Test: `web/apps/admin/src/lib/format.test.ts`
-- Test: `web/apps/admin/src/routes/NotFoundPage.test.tsx`
+- Create: `e-commerce-ui/apps/admin/package.json`
+- Create: `e-commerce-ui/apps/admin/tsconfig.json`
+- Create: `e-commerce-ui/apps/admin/vite.config.ts`
+- Create: `e-commerce-ui/apps/admin/vitest.config.ts`
+- Create: `e-commerce-ui/apps/admin/index.html`
+- Create: `e-commerce-ui/apps/admin/src/main.tsx`
+- Create: `e-commerce-ui/apps/admin/src/App.tsx`
+- Create: `e-commerce-ui/apps/admin/src/index.css`
+- Create: `e-commerce-ui/apps/admin/src/lib/queryClient.ts`
+- Create: `e-commerce-ui/apps/admin/src/lib/format.ts`
+- Create: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Create: `e-commerce-ui/apps/admin/src/routes/NotFoundPage.tsx`
+- Create: `e-commerce-ui/apps/admin/src/test/setup.ts`
+- Create: `e-commerce-ui/apps/admin/src/test/msw.ts`
+- Create: `e-commerce-ui/apps/admin/src/test/render.tsx`
+- Test: `e-commerce-ui/apps/admin/src/lib/format.test.ts`
+- Test: `e-commerce-ui/apps/admin/src/routes/NotFoundPage.test.tsx`
 
 **Interfaces:**
 - Consumes: `@shopflow/api-client` (`setBaseUrl`, `restoreSession`, `isApiError`) from Tasks 2–3.
@@ -1335,7 +1335,7 @@ The visible deliverable is a booting app whose not-found route works and whose d
 
 - [ ] **Step 1: Create the package manifest**
 
-`web/apps/admin/package.json`:
+`e-commerce-ui/apps/admin/package.json`:
 
 ```json
 {
@@ -1378,7 +1378,7 @@ The visible deliverable is a booting app whose not-found route works and whose d
 
 - [ ] **Step 2: Create the build and test configuration**
 
-`web/apps/admin/tsconfig.json`:
+`e-commerce-ui/apps/admin/tsconfig.json`:
 
 ```json
 {
@@ -1393,7 +1393,7 @@ The visible deliverable is a booting app whose not-found route works and whose d
 }
 ```
 
-`web/apps/admin/vite.config.ts`:
+`e-commerce-ui/apps/admin/vite.config.ts`:
 
 ```ts
 import tailwindcss from '@tailwindcss/vite'
@@ -1418,7 +1418,7 @@ export default defineConfig({
 })
 ```
 
-`web/apps/admin/vitest.config.ts`:
+`e-commerce-ui/apps/admin/vitest.config.ts`:
 
 ```ts
 import react from '@vitejs/plugin-react'
@@ -1435,7 +1435,7 @@ export default defineConfig({
 })
 ```
 
-`web/apps/admin/index.html`:
+`e-commerce-ui/apps/admin/index.html`:
 
 ```html
 <!doctype html>
@@ -1457,15 +1457,15 @@ The viewport meta tag is what makes every later `md:` breakpoint mean anything o
 - [ ] **Step 3: Install**
 
 ```bash
-cd web
+cd e-commerce-ui
 pnpm install
 ```
 
-Expected: both workspace projects are linked; `web/apps/admin/node_modules/@shopflow/api-client` is a symlink into `packages/api-client`.
+Expected: both workspace projects are linked; `e-commerce-ui/apps/admin/node_modules/@shopflow/api-client` is a symlink into `packages/api-client`.
 
 - [ ] **Step 4: Write the failing tests**
 
-`web/apps/admin/src/lib/format.test.ts`:
+`e-commerce-ui/apps/admin/src/lib/format.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1486,7 +1486,7 @@ describe('formatDateTime', () => {
 })
 ```
 
-`web/apps/admin/src/routes/NotFoundPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/routes/NotFoundPage.test.tsx`:
 
 ```tsx
 import { screen } from '@testing-library/react'
@@ -1507,7 +1507,7 @@ describe('NotFoundPage', () => {
 - [ ] **Step 5: Run them to verify they fail**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 ```
 
@@ -1515,7 +1515,7 @@ Expected: FAIL — `Failed to resolve import "./format"` and `"../test/render"`.
 
 - [ ] **Step 6: Write the test harness**
 
-`web/apps/admin/src/test/msw.ts`:
+`e-commerce-ui/apps/admin/src/test/msw.ts`:
 
 ```ts
 import { http, HttpResponse } from 'msw'
@@ -1537,7 +1537,7 @@ export function problemResponse(
 }
 ```
 
-`web/apps/admin/src/test/setup.ts`:
+`e-commerce-ui/apps/admin/src/test/setup.ts`:
 
 ```ts
 import '@testing-library/jest-dom/vitest'
@@ -1561,7 +1561,7 @@ afterEach(() => {
 afterAll(() => server.close())
 ```
 
-`web/apps/admin/src/test/render.tsx`:
+`e-commerce-ui/apps/admin/src/test/render.tsx`:
 
 ```tsx
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -1609,13 +1609,13 @@ export function renderWithProviders(
 
 - [ ] **Step 7: Write the app entry, router and formatters**
 
-`web/apps/admin/src/index.css`:
+`e-commerce-ui/apps/admin/src/index.css`:
 
 ```css
 @import "tailwindcss";
 ```
 
-`web/apps/admin/src/lib/format.ts`:
+`e-commerce-ui/apps/admin/src/lib/format.ts`:
 
 ```ts
 const usdFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -1637,7 +1637,7 @@ export function formatDateTime(iso: string): string {
 }
 ```
 
-`web/apps/admin/src/lib/queryClient.ts`:
+`e-commerce-ui/apps/admin/src/lib/queryClient.ts`:
 
 ```ts
 import { isApiError } from '@shopflow/api-client'
@@ -1659,7 +1659,7 @@ export function createQueryClient(): QueryClient {
 }
 ```
 
-`web/apps/admin/src/routes/NotFoundPage.tsx`:
+`e-commerce-ui/apps/admin/src/routes/NotFoundPage.tsx`:
 
 ```tsx
 import type { ReactElement } from 'react'
@@ -1681,7 +1681,7 @@ export function NotFoundPage(): ReactElement {
 }
 ```
 
-`web/apps/admin/src/routes/router.tsx`:
+`e-commerce-ui/apps/admin/src/routes/router.tsx`:
 
 ```tsx
 import { createBrowserRouter, Navigate } from 'react-router'
@@ -1694,7 +1694,7 @@ export const router = createBrowserRouter([
 ])
 ```
 
-`web/apps/admin/src/App.tsx`:
+`e-commerce-ui/apps/admin/src/App.tsx`:
 
 ```tsx
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -1714,7 +1714,7 @@ export function App(): ReactElement {
 }
 ```
 
-`web/apps/admin/src/main.tsx`:
+`e-commerce-ui/apps/admin/src/main.tsx`:
 
 ```tsx
 import { restoreSession } from '@shopflow/api-client'
@@ -1741,7 +1741,7 @@ createRoot(rootElement).render(
 - [ ] **Step 8: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 ```
@@ -1753,7 +1753,7 @@ Expected: PASS, 3 tests; typecheck silent.
 This is the step that proves the CORS workaround. The backend from Task 1 must be running.
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm dev &
 sleep 4
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/
@@ -1767,7 +1767,7 @@ Expected: `200` for the app shell, `[]` from `/api/categories` (the catalogue is
 - [ ] **Step 10: Verify the build works**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm build
 ```
 
@@ -1777,7 +1777,7 @@ Expected: a `dist/` directory. If Vite complains about top-level `await` in `mai
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin web/pnpm-lock.yaml
+git add e-commerce-ui/apps/admin e-commerce-ui/pnpm-lock.yaml
 git commit -m "feat(admin): app scaffold with the dev proxy that closes the CORS gap"
 ```
 
@@ -1788,22 +1788,22 @@ git commit -m "feat(admin): app scaffold with the dev proxy that closes the CORS
 Every screen from Task 6 onward is assembled from these. Building them once, with tests, is what keeps the three explicit query states and the 44px touch targets from being re-invented differently on each page. This task adds `react-hook-form`, `zod` and `@hookform/resolvers`, because `applyApiErrorToForm` is tested against a real form.
 
 **Files:**
-- Modify: `web/apps/admin/package.json` (add form dependencies)
-- Create: `web/apps/admin/src/lib/slug.ts`
-- Create: `web/apps/admin/src/lib/errors.ts`
-- Create: `web/apps/admin/src/lib/formErrors.ts`
-- Create: `web/apps/admin/src/components/Button.tsx`
-- Create: `web/apps/admin/src/components/Field.tsx`
-- Create: `web/apps/admin/src/components/Badge.tsx`
-- Create: `web/apps/admin/src/components/QueryStates.tsx`
-- Create: `web/apps/admin/src/components/Dialog.tsx`
-- Create: `web/apps/admin/src/components/ConfirmDialog.tsx`
-- Create: `web/apps/admin/src/components/Toast.tsx`
-- Modify: `web/apps/admin/src/test/render.tsx` (wrap the tree in `ToastProvider`)
-- Test: `web/apps/admin/src/lib/slug.test.ts`
-- Test: `web/apps/admin/src/lib/formErrors.test.tsx`
-- Test: `web/apps/admin/src/components/QueryStates.test.tsx`
-- Test: `web/apps/admin/src/components/Dialog.test.tsx`
+- Modify: `e-commerce-ui/apps/admin/package.json` (add form dependencies)
+- Create: `e-commerce-ui/apps/admin/src/lib/slug.ts`
+- Create: `e-commerce-ui/apps/admin/src/lib/errors.ts`
+- Create: `e-commerce-ui/apps/admin/src/lib/formErrors.ts`
+- Create: `e-commerce-ui/apps/admin/src/components/Button.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/Field.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/Badge.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/QueryStates.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/Dialog.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/ConfirmDialog.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/Toast.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/test/render.tsx` (wrap the tree in `ToastProvider`)
+- Test: `e-commerce-ui/apps/admin/src/lib/slug.test.ts`
+- Test: `e-commerce-ui/apps/admin/src/lib/formErrors.test.tsx`
+- Test: `e-commerce-ui/apps/admin/src/components/QueryStates.test.tsx`
+- Test: `e-commerce-ui/apps/admin/src/components/Dialog.test.tsx`
 
 **Interfaces:**
 - Consumes: `isApiError`, `ApiError` from `@shopflow/api-client`; `renderWithProviders` from Task 4.
@@ -1825,7 +1825,7 @@ Every screen from Task 6 onward is assembled from these. Building them once, wit
 
 - [ ] **Step 1: Add the form dependencies**
 
-Add to `dependencies` in `web/apps/admin/package.json`:
+Add to `dependencies` in `e-commerce-ui/apps/admin/package.json`:
 
 ```json
     "@hookform/resolvers": "^5.8.0",
@@ -1836,7 +1836,7 @@ Add to `dependencies` in `web/apps/admin/package.json`:
 Then:
 
 ```bash
-cd web
+cd e-commerce-ui
 pnpm install
 ```
 
@@ -1850,7 +1850,7 @@ one by inspection. Pick a seasoned version instead, or wait the cooldown out.
 
 - [ ] **Step 2: Write the failing slug and form-error tests**
 
-`web/apps/admin/src/lib/slug.test.ts`:
+`e-commerce-ui/apps/admin/src/lib/slug.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1890,7 +1890,7 @@ describe('toCode', () => {
 })
 ```
 
-`web/apps/admin/src/lib/formErrors.test.tsx`:
+`e-commerce-ui/apps/admin/src/lib/formErrors.test.tsx`:
 
 ```tsx
 import { render, screen } from '@testing-library/react'
@@ -1979,7 +1979,7 @@ describe('applyApiErrorToForm', () => {
 - [ ] **Step 3: Run them to verify they fail**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test slug formErrors
 ```
 
@@ -1987,7 +1987,7 @@ Expected: FAIL — `Failed to resolve import "./slug"` and `"./formErrors"`.
 
 - [ ] **Step 4: Write the slug and error helpers**
 
-`web/apps/admin/src/lib/slug.ts`:
+`e-commerce-ui/apps/admin/src/lib/slug.ts`:
 
 ```ts
 /** The backend's constraint on category and category-type codes, copied verbatim. */
@@ -2012,7 +2012,7 @@ export function toCode(name: string): string {
 }
 ```
 
-`web/apps/admin/src/lib/errors.ts`:
+`e-commerce-ui/apps/admin/src/lib/errors.ts`:
 
 ```ts
 import { isApiError } from '@shopflow/api-client'
@@ -2078,7 +2078,7 @@ export function describeError(error: unknown): ErrorDescription {
 }
 ```
 
-`web/apps/admin/src/lib/formErrors.ts`:
+`e-commerce-ui/apps/admin/src/lib/formErrors.ts`:
 
 ```ts
 import { isApiError } from '@shopflow/api-client'
@@ -2117,7 +2117,7 @@ export function applyApiErrorToForm<T extends FieldValues>(
 - [ ] **Step 5: Run them to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test slug formErrors
 ```
 
@@ -2125,7 +2125,7 @@ Expected: PASS, 9 tests.
 
 - [ ] **Step 6: Write the failing component tests**
 
-`web/apps/admin/src/components/QueryStates.test.tsx`:
+`e-commerce-ui/apps/admin/src/components/QueryStates.test.tsx`:
 
 ```tsx
 import { ApiError, NetworkError } from '@shopflow/api-client'
@@ -2182,7 +2182,7 @@ describe('EmptyState', () => {
 })
 ```
 
-`web/apps/admin/src/components/Dialog.test.tsx`:
+`e-commerce-ui/apps/admin/src/components/Dialog.test.tsx`:
 
 ```tsx
 import { render, screen } from '@testing-library/react'
@@ -2265,7 +2265,7 @@ describe('ConfirmDialog', () => {
 - [ ] **Step 7: Run them to verify they fail**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test QueryStates Dialog
 ```
 
@@ -2273,7 +2273,7 @@ Expected: FAIL — unresolved imports for `./QueryStates`, `./Dialog`, `./Confir
 
 - [ ] **Step 8: Write the primitives**
 
-`web/apps/admin/src/components/Button.tsx`:
+`e-commerce-ui/apps/admin/src/components/Button.tsx`:
 
 ```tsx
 import type { ButtonHTMLAttributes, ReactElement } from 'react'
@@ -2316,7 +2316,7 @@ export function Button({
 }
 ```
 
-`web/apps/admin/src/components/Field.tsx`:
+`e-commerce-ui/apps/admin/src/components/Field.tsx`:
 
 ```tsx
 import type { InputHTMLAttributes, ReactElement, ReactNode } from 'react'
@@ -2370,7 +2370,7 @@ export function TextInput({ invalid = false, className = '', ...rest }: TextInpu
 }
 ```
 
-`web/apps/admin/src/components/Badge.tsx`:
+`e-commerce-ui/apps/admin/src/components/Badge.tsx`:
 
 ```tsx
 import type { ReactElement, ReactNode } from 'react'
@@ -2401,7 +2401,7 @@ export function Badge({
 }
 ```
 
-`web/apps/admin/src/components/QueryStates.tsx`:
+`e-commerce-ui/apps/admin/src/components/QueryStates.tsx`:
 
 ```tsx
 import type { ReactElement, ReactNode } from 'react'
@@ -2454,7 +2454,7 @@ export function EmptyState({
 }
 ```
 
-`web/apps/admin/src/components/Dialog.tsx`:
+`e-commerce-ui/apps/admin/src/components/Dialog.tsx`:
 
 ```tsx
 import { useEffect, useId, useRef, type ReactElement, type ReactNode } from 'react'
@@ -2520,7 +2520,7 @@ export function Dialog({ open, title, onClose, children, footer }: DialogProps):
 }
 ```
 
-`web/apps/admin/src/components/ConfirmDialog.tsx`:
+`e-commerce-ui/apps/admin/src/components/ConfirmDialog.tsx`:
 
 ```tsx
 import type { ReactElement, ReactNode } from 'react'
@@ -2580,7 +2580,7 @@ export function ConfirmDialog({
 }
 ```
 
-`web/apps/admin/src/components/Toast.tsx`:
+`e-commerce-ui/apps/admin/src/components/Toast.tsx`:
 
 ```tsx
 import { createContext, useCallback, useContext, useRef, useState, type ReactElement, type ReactNode } from 'react'
@@ -2631,7 +2631,7 @@ export function useToast(): (message: string) => void {
 
 `useToast` throws outside a `ToastProvider`, and from Task 7 on nearly every screen under test calls it. Wrap it once in the shared render helper rather than in each test.
 
-In `web/apps/admin/src/test/render.tsx`, add the import:
+In `e-commerce-ui/apps/admin/src/test/render.tsx`, add the import:
 
 ```tsx
 import { ToastProvider } from '../components/Toast'
@@ -2659,7 +2659,7 @@ and wrap the router, so the whole tree matches what `App` provides in production
 - [ ] **Step 10: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 ```
@@ -2670,7 +2670,7 @@ Expected: PASS, 16 tests across six files; typecheck silent.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin web/pnpm-lock.yaml
+git add e-commerce-ui/apps/admin e-commerce-ui/pnpm-lock.yaml
 git commit -m "feat(admin): shared primitives for query states, dialogs and form errors"
 ```
 
@@ -2681,15 +2681,15 @@ git commit -m "feat(admin): shared primitives for query states, dialogs and form
 Delivers acceptance criteria 1 and 2. After this task you can sign in, see the shell on a phone and a laptop, and sign out.
 
 **Files:**
-- Create: `web/apps/admin/src/features/auth/api.ts`
-- Create: `web/apps/admin/src/features/auth/session.ts`
-- Create: `web/apps/admin/src/features/auth/RequireAdmin.tsx`
-- Create: `web/apps/admin/src/features/auth/LoginPage.tsx`
-- Create: `web/apps/admin/src/routes/AdminLayout.tsx`
-- Modify: `web/apps/admin/src/routes/router.tsx`
-- Modify: `web/apps/admin/src/App.tsx`
-- Test: `web/apps/admin/src/features/auth/LoginPage.test.tsx`
-- Test: `web/apps/admin/src/features/auth/RequireAdmin.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/auth/api.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/auth/session.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/auth/RequireAdmin.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/auth/LoginPage.tsx`
+- Create: `e-commerce-ui/apps/admin/src/routes/AdminLayout.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/App.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/auth/LoginPage.test.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/auth/RequireAdmin.test.tsx`
 
 **Interfaces:**
 - Consumes: `request`, `setTokens`, `clearTokens`, `getAccessToken`, `getRefreshToken`, `AUTH_EXPIRED_EVENT`, `isApiError`, `LoginRequest`, `TokenPair`, `UserProfile` from `@shopflow/api-client`; `Button`, `Field`, `TextInput`, `ErrorPanel`, `ToastProvider` from Task 5; `renderWithProviders`, `server`, `http`, `HttpResponse`, `API`, `problemResponse` from Task 4.
@@ -2708,7 +2708,7 @@ Delivers acceptance criteria 1 and 2. After this task you can sign in, see the s
 
 - [ ] **Step 1: Write the failing tests**
 
-`web/apps/admin/src/features/auth/LoginPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/auth/LoginPage.test.tsx`:
 
 ```tsx
 import { clearTokens, getAccessToken, getRefreshToken } from '@shopflow/api-client'
@@ -2806,7 +2806,7 @@ describe('LoginPage', () => {
 })
 ```
 
-`web/apps/admin/src/features/auth/RequireAdmin.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/auth/RequireAdmin.test.tsx`:
 
 ```tsx
 import { clearTokens, setTokens } from '@shopflow/api-client'
@@ -2893,7 +2893,7 @@ describe('RequireAdmin', () => {
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test auth
 ```
 
@@ -2901,7 +2901,7 @@ Expected: FAIL — unresolved imports for `./LoginPage` and `./RequireAdmin`.
 
 - [ ] **Step 3: Write the auth API calls**
 
-`web/apps/admin/src/features/auth/api.ts`:
+`e-commerce-ui/apps/admin/src/features/auth/api.ts`:
 
 ```ts
 import { request, type LoginRequest, type TokenPair, type UserProfile } from '@shopflow/api-client'
@@ -2923,7 +2923,7 @@ export function logout(refreshToken: string): Promise<void> {
 
 - [ ] **Step 4: Write the session hooks**
 
-`web/apps/admin/src/features/auth/session.ts`:
+`e-commerce-ui/apps/admin/src/features/auth/session.ts`:
 
 ```ts
 import {
@@ -3039,7 +3039,7 @@ export function useAuthExpiredRedirect(): void {
 
 - [ ] **Step 5: Write the gate**
 
-`web/apps/admin/src/features/auth/RequireAdmin.tsx`:
+`e-commerce-ui/apps/admin/src/features/auth/RequireAdmin.tsx`:
 
 ```tsx
 import { isApiError } from '@shopflow/api-client'
@@ -3105,7 +3105,7 @@ function NoAdminAccess(): ReactElement {
 
 - [ ] **Step 6: Write the login screen**
 
-`web/apps/admin/src/features/auth/LoginPage.tsx`:
+`e-commerce-ui/apps/admin/src/features/auth/LoginPage.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -3204,7 +3204,7 @@ export function LoginPage(): ReactElement {
 
 - [ ] **Step 7: Write the responsive shell**
 
-`web/apps/admin/src/routes/AdminLayout.tsx`:
+`e-commerce-ui/apps/admin/src/routes/AdminLayout.tsx`:
 
 ```tsx
 import { useState, type ReactElement } from 'react'
@@ -3293,7 +3293,7 @@ export function AdminLayout(): ReactElement {
 
 - [ ] **Step 8: Wire the routes and the toast provider**
 
-`web/apps/admin/src/routes/router.tsx`:
+`e-commerce-ui/apps/admin/src/routes/router.tsx`:
 
 ```tsx
 import { createBrowserRouter, Navigate } from 'react-router'
@@ -3317,7 +3317,7 @@ export const router = createBrowserRouter([
 ])
 ```
 
-`web/apps/admin/src/App.tsx`:
+`e-commerce-ui/apps/admin/src/App.tsx`:
 
 ```tsx
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -3343,7 +3343,7 @@ export function App(): ReactElement {
 - [ ] **Step 9: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 ```
@@ -3355,7 +3355,7 @@ Expected: PASS, 25 tests. The non-admin case is acceptance criterion 1.
 With the backend running:
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm dev
 ```
 
@@ -3381,12 +3381,12 @@ git commit -am "feat(admin): login, the ADMIN gate and the responsive shell"
 Delivers acceptance criteria 4 and 5, and the empty state that is the very first screen this app will ever show against a fresh database.
 
 **Files:**
-- Create: `web/apps/admin/src/features/categories/api.ts`
-- Create: `web/apps/admin/src/features/categories/queries.ts`
-- Create: `web/apps/admin/src/features/categories/CategoriesPage.tsx`
-- Create: `web/apps/admin/src/features/categories/CategoryFormDialog.tsx`
-- Modify: `web/apps/admin/src/routes/router.tsx`
-- Test: `web/apps/admin/src/features/categories/CategoriesPage.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/api.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/CategoryFormDialog.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.test.tsx`
 
 **Interfaces:**
 - Consumes: `request`, `Category`, `CreateCategoryRequest` from `@shopflow/api-client`; `Button`, `Badge`, `Field`, `TextInput`, `inputClass`, `Dialog`, `Skeleton`, `ErrorPanel`, `EmptyState`, `useToast` from Task 5; `toCode`, `CODE_PATTERN` from Task 5; `applyApiErrorToForm` from Task 5.
@@ -3402,7 +3402,7 @@ Delivers acceptance criteria 4 and 5, and the empty state that is the very first
 
 - [ ] **Step 1: Write the failing test**
 
-`web/apps/admin/src/features/categories/CategoriesPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.test.tsx`:
 
 ```tsx
 import { screen, waitFor, within } from '@testing-library/react'
@@ -3536,7 +3536,7 @@ describe('CategoriesPage', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test CategoriesPage
 ```
 
@@ -3544,7 +3544,7 @@ Expected: FAIL — `Failed to resolve import "./CategoriesPage"`.
 
 - [ ] **Step 3: Write the API calls and query hooks**
 
-`web/apps/admin/src/features/categories/api.ts`:
+`e-commerce-ui/apps/admin/src/features/categories/api.ts`:
 
 ```ts
 import { request, type Category, type CreateCategoryRequest } from '@shopflow/api-client'
@@ -3559,7 +3559,7 @@ export function createCategory(body: CreateCategoryRequest): Promise<Category> {
 }
 ```
 
-`web/apps/admin/src/features/categories/queries.ts`:
+`e-commerce-ui/apps/admin/src/features/categories/queries.ts`:
 
 ```ts
 import type { Category, CreateCategoryRequest } from '@shopflow/api-client'
@@ -3599,7 +3599,7 @@ export function useCreateCategory(): UseMutationResult<Category, unknown, Create
 
 - [ ] **Step 4: Write the create dialog**
 
-`web/apps/admin/src/features/categories/CategoryFormDialog.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoryFormDialog.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -3759,7 +3759,7 @@ export function CategoryFormDialog({
 
 - [ ] **Step 5: Write the page**
 
-`web/apps/admin/src/features/categories/CategoriesPage.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.tsx`:
 
 ```tsx
 import type { Category } from '@shopflow/api-client'
@@ -3842,7 +3842,7 @@ export function CategoryCard({ category }: { category: Category }): ReactElement
 
 - [ ] **Step 6: Add the route**
 
-In `web/apps/admin/src/routes/router.tsx`, add the import and the child route:
+In `e-commerce-ui/apps/admin/src/routes/router.tsx`, add the import and the child route:
 
 ```tsx
 import { CategoriesPage } from '../features/categories/CategoriesPage'
@@ -3858,7 +3858,7 @@ import { CategoriesPage } from '../features/categories/CategoriesPage'
 - [ ] **Step 7: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 ```
@@ -3869,7 +3869,7 @@ Expected: PASS, 32 tests.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): categories list with the typeless warning and a slugged create form"
 ```
 
@@ -3884,13 +3884,13 @@ Note the asymmetric routing, which is easy to get wrong: a type is **created** u
 `CategoryCard` moves out of `CategoriesPage.tsx` into its own file in this task: it grows three dialogs and per-type actions, and a card that owns its own mutations is easier to hold in your head than a page that owns everything.
 
 **Files:**
-- Modify: `web/apps/admin/src/features/categories/api.ts`
-- Modify: `web/apps/admin/src/features/categories/queries.ts`
-- Create: `web/apps/admin/src/features/categories/CategoryCard.tsx` (moved out of `CategoriesPage.tsx`)
-- Modify: `web/apps/admin/src/features/categories/CategoriesPage.tsx`
-- Modify: `web/apps/admin/src/features/categories/CategoryFormDialog.tsx`
-- Create: `web/apps/admin/src/features/categories/CategoryTypeFormDialog.tsx`
-- Test: `web/apps/admin/src/features/categories/CategoryCard.test.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/categories/api.ts`
+- Modify: `e-commerce-ui/apps/admin/src/features/categories/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/CategoryCard.tsx` (moved out of `CategoriesPage.tsx`)
+- Modify: `e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/categories/CategoryFormDialog.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/categories/CategoryTypeFormDialog.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/categories/CategoryCard.test.tsx`
 
 **Interfaces:**
 - Consumes: everything Task 7 produced; `ConfirmDialog` from Task 5; `UpdateCategoryRequest`, `CreateCategoryTypeRequest`, `UpdateCategoryTypeRequest`, `CategoryType` from `@shopflow/api-client`; `describeError` from Task 5.
@@ -3911,7 +3911,7 @@ Note the asymmetric routing, which is easy to get wrong: a type is **created** u
 
 - [ ] **Step 1: Write the failing test**
 
-`web/apps/admin/src/features/categories/CategoryCard.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoryCard.test.tsx`:
 
 ```tsx
 import { screen, waitFor, within } from '@testing-library/react'
@@ -4107,7 +4107,7 @@ describe('CategoryCard', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test CategoryCard
 ```
 
@@ -4115,7 +4115,7 @@ Expected: FAIL — `Failed to resolve import "./CategoryCard"`.
 
 - [ ] **Step 3: Add the API calls**
 
-Append to `web/apps/admin/src/features/categories/api.ts` and widen the import:
+Append to `e-commerce-ui/apps/admin/src/features/categories/api.ts` and widen the import:
 
 ```ts
 import {
@@ -4162,7 +4162,7 @@ export function deleteCategoryType(typeId: string): Promise<void> {
 
 - [ ] **Step 4: Add the mutation hooks**
 
-Append to `web/apps/admin/src/features/categories/queries.ts` and widen both imports:
+Append to `e-commerce-ui/apps/admin/src/features/categories/queries.ts` and widen both imports:
 
 ```ts
 import type {
@@ -4248,7 +4248,7 @@ export function useDeleteCategoryType(): UseMutationResult<void, unknown, string
 
 - [ ] **Step 5: Teach the category dialog to edit**
 
-Replace `web/apps/admin/src/features/categories/CategoryFormDialog.tsx` with the version below. The create path is unchanged; edit mode drops `code` from the payload entirely because the backend has no field for it, and shows it disabled so nobody hunts for a way to change it.
+Replace `e-commerce-ui/apps/admin/src/features/categories/CategoryFormDialog.tsx` with the version below. The create path is unchanged; edit mode drops `code` from the payload entirely because the backend has no field for it, and shows it disabled so nobody hunts for a way to change it.
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -4439,7 +4439,7 @@ export function CategoryFormDialog({
 
 - [ ] **Step 6: Write the type dialog**
 
-`web/apps/admin/src/features/categories/CategoryTypeFormDialog.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoryTypeFormDialog.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -4619,7 +4619,7 @@ export function CategoryTypeFormDialog({
 
 - [ ] **Step 7: Write the card with its actions**
 
-`web/apps/admin/src/features/categories/CategoryCard.tsx`:
+`e-commerce-ui/apps/admin/src/features/categories/CategoryCard.tsx`:
 
 ```tsx
 import type { Category, CategoryType } from '@shopflow/api-client'
@@ -4808,7 +4808,7 @@ export function CategoryCard({ category }: { category: Category }): ReactElement
 
 - [ ] **Step 8: Point the page at the moved card**
 
-In `web/apps/admin/src/features/categories/CategoriesPage.tsx`, delete the whole `CategoryCard` function and its now-unused `Badge` and `Category` imports, and import the card instead:
+In `e-commerce-ui/apps/admin/src/features/categories/CategoriesPage.tsx`, delete the whole `CategoryCard` function and its now-unused `Badge` and `Category` imports, and import the card instead:
 
 ```tsx
 import { CategoryCard } from './CategoryCard'
@@ -4828,7 +4828,7 @@ import { useCategories } from './queries'
 - [ ] **Step 9: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -4840,7 +4840,7 @@ Expected: PASS, 40 tests. The cascade wording in `names the types the cascade wi
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): category edit, cascade-aware delete and category types"
 ```
 
@@ -4853,15 +4853,15 @@ The screen the operator lives on. Every filter lives in the query string, so a f
 Two presentations of the same rows: a real table from `md` up, stacked cards below. Both come from one `content` array, so they cannot disagree.
 
 **Files:**
-- Create: `web/apps/admin/src/features/products/filters.ts`
-- Create: `web/apps/admin/src/features/products/api.ts`
-- Create: `web/apps/admin/src/features/products/queries.ts`
-- Create: `web/apps/admin/src/features/products/ProductList.tsx`
-- Create: `web/apps/admin/src/features/products/ProductsPage.tsx`
-- Create: `web/apps/admin/src/components/Pagination.tsx`
-- Modify: `web/apps/admin/src/routes/router.tsx`
-- Test: `web/apps/admin/src/features/products/filters.test.ts`
-- Test: `web/apps/admin/src/features/products/ProductsPage.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/products/filters.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/products/api.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/products/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/products/ProductList.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/products/ProductsPage.tsx`
+- Create: `e-commerce-ui/apps/admin/src/components/Pagination.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/products/filters.test.ts`
+- Test: `e-commerce-ui/apps/admin/src/features/products/ProductsPage.test.tsx`
 
 **Interfaces:**
 - Consumes: `request`, `AdminProductPage`, `AdminProductSummary` from `@shopflow/api-client`; `formatUsd` from Task 4; `Badge`, `Button`, `Field`, `inputClass`, `Skeleton`, `ErrorPanel`, `EmptyState` from Task 5; `useCategories` from Task 7.
@@ -4884,7 +4884,7 @@ Two presentations of the same rows: a real table from `md` up, stacked cards bel
 
 - [ ] **Step 1: Write the failing filter test**
 
-`web/apps/admin/src/features/products/filters.test.ts`:
+`e-commerce-ui/apps/admin/src/features/products/filters.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -4949,7 +4949,7 @@ describe('filtersToSearchParams', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test filters
 ```
 
@@ -4957,7 +4957,7 @@ Expected: FAIL — `Failed to resolve import "./filters"`.
 
 - [ ] **Step 3: Write the filters module**
 
-`web/apps/admin/src/features/products/filters.ts`:
+`e-commerce-ui/apps/admin/src/features/products/filters.ts`:
 
 ```ts
 import { useCallback, useMemo } from 'react'
@@ -5059,7 +5059,7 @@ export function useProductFilters(): {
 - [ ] **Step 4: Run it to verify it passes**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test filters
 ```
 
@@ -5067,7 +5067,7 @@ Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Write the failing page test**
 
-`web/apps/admin/src/features/products/ProductsPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductsPage.test.tsx`:
 
 ```tsx
 import { screen, waitFor, within } from '@testing-library/react'
@@ -5301,7 +5301,7 @@ describe('ProductsPage', () => {
 - [ ] **Step 6: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test ProductsPage
 ```
 
@@ -5309,7 +5309,7 @@ Expected: FAIL — `Failed to resolve import "./ProductsPage"`.
 
 - [ ] **Step 7: Write the API call and the query hook**
 
-`web/apps/admin/src/features/products/api.ts`:
+`e-commerce-ui/apps/admin/src/features/products/api.ts`:
 
 ```ts
 import { request, type AdminProductPage } from '@shopflow/api-client'
@@ -5331,7 +5331,7 @@ export function fetchProducts(filters: ProductFilters): Promise<AdminProductPage
 }
 ```
 
-`web/apps/admin/src/features/products/queries.ts`:
+`e-commerce-ui/apps/admin/src/features/products/queries.ts`:
 
 ```ts
 import type { AdminProductPage } from '@shopflow/api-client'
@@ -5353,7 +5353,7 @@ export function useProducts(filters: ProductFilters): UseQueryResult<AdminProduc
 
 - [ ] **Step 8: Write the pagination control**
 
-`web/apps/admin/src/components/Pagination.tsx`:
+`e-commerce-ui/apps/admin/src/components/Pagination.tsx`:
 
 ```tsx
 import type { ReactElement } from 'react'
@@ -5405,7 +5405,7 @@ export function Pagination({
 
 - [ ] **Step 9: Write the responsive list**
 
-`web/apps/admin/src/features/products/ProductList.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductList.tsx`:
 
 ```tsx
 import type { AdminProductSummary } from '@shopflow/api-client'
@@ -5511,7 +5511,7 @@ function StatusBadges({ product }: { product: AdminProductSummary }): ReactEleme
 
 - [ ] **Step 10: Write the page**
 
-`web/apps/admin/src/features/products/ProductsPage.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductsPage.tsx`:
 
 ```tsx
 import { useEffect, useState, type ReactElement } from 'react'
@@ -5685,7 +5685,7 @@ export function ProductsPage(): ReactElement {
 
 - [ ] **Step 11: Add the route**
 
-In `web/apps/admin/src/routes/router.tsx`:
+In `e-commerce-ui/apps/admin/src/routes/router.tsx`:
 
 ```tsx
 import { ProductsPage } from '../features/products/ProductsPage'
@@ -5702,7 +5702,7 @@ import { ProductsPage } from '../features/products/ProductsPage'
 - [ ] **Step 12: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -5721,7 +5721,7 @@ With the backend and `pnpm dev` running, open `http://localhost:5173/products`, 
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): product list with URL-backed filters and a table/card pair"
 ```
 
@@ -5734,13 +5734,13 @@ Delivers acceptance criterion 6. `POST /api/admin/products` answers `404` when `
 The form fields live in their own component because Task 11 edits the same five fields on the detail screen; one component means the price rule and the category/type coupling cannot drift between create and edit.
 
 **Files:**
-- Create: `web/apps/admin/src/features/products/productForm.ts`
-- Create: `web/apps/admin/src/features/products/ProductFields.tsx`
-- Create: `web/apps/admin/src/features/products/NewProductPage.tsx`
-- Modify: `web/apps/admin/src/features/products/api.ts`
-- Modify: `web/apps/admin/src/features/products/queries.ts`
-- Modify: `web/apps/admin/src/routes/router.tsx`
-- Test: `web/apps/admin/src/features/products/NewProductPage.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/products/productForm.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/products/ProductFields.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/products/NewProductPage.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/api.ts`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/queries.ts`
+- Modify: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/products/NewProductPage.test.tsx`
 
 **Interfaces:**
 - Consumes: `CreateProductRequest`, `AdminProduct` from `@shopflow/api-client`; `useCategories` from Task 7; `Field`, `TextInput`, `inputClass`, `Button`, `Skeleton`, `ErrorPanel`, `useToast` from Tasks 5 and 7; `applyApiErrorToForm` from Task 5.
@@ -5755,7 +5755,7 @@ The form fields live in their own component because Task 11 edits the same five 
 
 - [ ] **Step 1: Write the failing test**
 
-`web/apps/admin/src/features/products/NewProductPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/NewProductPage.test.tsx`:
 
 ```tsx
 import { screen, waitFor } from '@testing-library/react'
@@ -5924,7 +5924,7 @@ describe('NewProductPage', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test NewProductPage
 ```
 
@@ -5932,7 +5932,7 @@ Expected: FAIL — `Failed to resolve import "./NewProductPage"`.
 
 - [ ] **Step 3: Write the shared schema**
 
-`web/apps/admin/src/features/products/productForm.ts`:
+`e-commerce-ui/apps/admin/src/features/products/productForm.ts`:
 
 ```ts
 import { z } from 'zod'
@@ -5972,7 +5972,7 @@ export function priceToNumber(price: string): number {
 
 - [ ] **Step 4: Write the shared fields**
 
-`web/apps/admin/src/features/products/ProductFields.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductFields.tsx`:
 
 ```tsx
 import type { Category } from '@shopflow/api-client'
@@ -6107,7 +6107,7 @@ export function ProductFields({
 
 - [ ] **Step 5: Add the create call and hook**
 
-Append to `web/apps/admin/src/features/products/api.ts`, widening the import to
+Append to `e-commerce-ui/apps/admin/src/features/products/api.ts`, widening the import to
 `{ request, type AdminProduct, type AdminProductPage, type CreateProductRequest }`:
 
 ```ts
@@ -6117,7 +6117,7 @@ export function createProduct(body: CreateProductRequest): Promise<AdminProduct>
 }
 ```
 
-Append to `web/apps/admin/src/features/products/queries.ts`, widening the imports to include
+Append to `e-commerce-ui/apps/admin/src/features/products/queries.ts`, widening the imports to include
 `useMutation`, `useQueryClient`, `type UseMutationResult`, `type AdminProduct`,
 `type CreateProductRequest` and `createProduct`:
 
@@ -6135,7 +6135,7 @@ export function useCreateProduct(): UseMutationResult<AdminProduct, unknown, Cre
 
 - [ ] **Step 6: Write the page**
 
-`web/apps/admin/src/features/products/NewProductPage.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/NewProductPage.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6231,7 +6231,7 @@ export function NewProductPage(): ReactElement {
 
 - [ ] **Step 7: Add the route**
 
-In `web/apps/admin/src/routes/router.tsx`, above the `/products` route is fine — the paths are literal, so order does not matter, but keep `new` next to its list:
+In `e-commerce-ui/apps/admin/src/routes/router.tsx`, above the `/products` route is fine — the paths are literal, so order does not matter, but keep `new` next to its list:
 
 ```tsx
 import { NewProductPage } from '../features/products/NewProductPage'
@@ -6245,7 +6245,7 @@ import { NewProductPage } from '../features/products/NewProductPage'
 - [ ] **Step 8: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -6257,7 +6257,7 @@ Expected: PASS, 66 tests. `/products/:id` does not exist yet, so after a real cr
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): create a product with category-scoped type selection"
 ```
 
@@ -6274,12 +6274,12 @@ Delivers acceptance criterion 10. Three backend facts drive this screen:
 Task 12 adds the variants section to this page and Task 13 the images section; this task ends with a page whose Details card saves.
 
 **Files:**
-- Modify: `web/apps/admin/src/features/products/api.ts`
-- Modify: `web/apps/admin/src/features/products/queries.ts`
-- Create: `web/apps/admin/src/features/products/ProductDetailsCard.tsx`
-- Create: `web/apps/admin/src/features/products/ProductDetailPage.tsx`
-- Modify: `web/apps/admin/src/routes/router.tsx`
-- Test: `web/apps/admin/src/features/products/ProductDetailPage.test.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/api.ts`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/products/ProductDetailsCard.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/routes/router.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.test.tsx`
 
 **Interfaces:**
 - Consumes: `AdminProduct`, `UpdateProductRequest` from `@shopflow/api-client`; `ProductFields`, `productSchema`, `PRODUCT_FIELDS`, `priceToNumber` from Task 10; `useCategories` from Task 7; `ConfirmDialog`, `Badge`, `Button`, `Skeleton`, `ErrorPanel`, `useToast`, `describeError`, `applyApiErrorToForm` from Task 5.
@@ -6298,7 +6298,7 @@ Task 12 adds the variants section to this page and Task 13 the images section; t
 
 - [ ] **Step 1: Write the failing test**
 
-`web/apps/admin/src/features/products/ProductDetailPage.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.test.tsx`:
 
 ```tsx
 import { screen, waitFor, within } from '@testing-library/react'
@@ -6476,7 +6476,7 @@ describe('ProductDetailPage', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test ProductDetailPage
 ```
 
@@ -6484,7 +6484,7 @@ Expected: FAIL — `Failed to resolve import "./ProductDetailPage"`.
 
 - [ ] **Step 3: Add the API calls**
 
-Append to `web/apps/admin/src/features/products/api.ts`, widening the import to include
+Append to `e-commerce-ui/apps/admin/src/features/products/api.ts`, widening the import to include
 `type UpdateProductRequest`:
 
 ```ts
@@ -6510,7 +6510,7 @@ export function restoreProduct(id: string): Promise<AdminProduct> {
 
 - [ ] **Step 4: Add the detail query and its mutations**
 
-Append to `web/apps/admin/src/features/products/queries.ts`, widening the imports to include
+Append to `e-commerce-ui/apps/admin/src/features/products/queries.ts`, widening the imports to include
 `archiveProduct`, `fetchProduct`, `restoreProduct`, `updateProduct` and `type UpdateProductRequest`:
 
 ```ts
@@ -6569,7 +6569,7 @@ export function useRestoreProduct(id: string): UseMutationResult<AdminProduct, u
 
 - [ ] **Step 5: Write the Details card**
 
-`web/apps/admin/src/features/products/ProductDetailsCard.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductDetailsCard.tsx`:
 
 ```tsx
 import type { AdminProduct, UpdateProductRequest } from '@shopflow/api-client'
@@ -6678,7 +6678,7 @@ export function ProductDetailsCard({ product }: { product: AdminProduct }): Reac
 
 - [ ] **Step 6: Write the page**
 
-`web/apps/admin/src/features/products/ProductDetailPage.tsx`:
+`e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`:
 
 ```tsx
 import { useState, type ReactElement } from 'react'
@@ -6813,7 +6813,7 @@ export function ProductDetailPage(): ReactElement {
 
 - [ ] **Step 7: Add the route**
 
-In `web/apps/admin/src/routes/router.tsx`:
+In `e-commerce-ui/apps/admin/src/routes/router.tsx`:
 
 ```tsx
 import { ProductDetailPage } from '../features/products/ProductDetailPage'
@@ -6828,7 +6828,7 @@ import { ProductDetailPage } from '../features/products/ProductDetailPage'
 - [ ] **Step 8: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -6840,7 +6840,7 @@ Expected: PASS, 72 tests.
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): product detail with dirty-field PATCH and archive/restore"
 ```
 
@@ -6860,14 +6860,14 @@ A negative result comes back as `409 Insufficient stock` with the server's arith
 Variants live at `/api/admin/variants/{id}` — like category types, they are created under their parent and then addressed by their own id.
 
 **Files:**
-- Create: `web/apps/admin/src/features/variants/api.ts`
-- Create: `web/apps/admin/src/features/variants/queries.ts`
-- Create: `web/apps/admin/src/features/variants/VariantFormDialog.tsx`
-- Create: `web/apps/admin/src/features/variants/StockDialog.tsx`
-- Create: `web/apps/admin/src/features/variants/VariantsCard.tsx`
-- Modify: `web/apps/admin/src/features/products/ProductDetailPage.tsx`
-- Test: `web/apps/admin/src/features/variants/StockDialog.test.tsx`
-- Test: `web/apps/admin/src/features/variants/VariantsCard.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/variants/api.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/variants/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/variants/VariantFormDialog.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/variants/StockDialog.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/variants/VariantsCard.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/variants/StockDialog.test.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/variants/VariantsCard.test.tsx`
 
 **Interfaces:**
 - Consumes: `AdminVariant`, `AdjustStockRequest`, `CreateVariantRequest`, `UpdateVariantRequest`, `StockAdjustment` from `@shopflow/api-client`; `productQueryKey`, `PRODUCTS_QUERY_KEY` from Task 11; `Dialog`, `ConfirmDialog`, `Badge`, `Button`, `Field`, `TextInput`, `useToast`, `describeError`, `applyApiErrorToForm` from Task 5.
@@ -6884,7 +6884,7 @@ Variants live at `/api/admin/variants/{id}` — like category types, they are cr
 
 - [ ] **Step 1: Write the failing stock-dialog test**
 
-`web/apps/admin/src/features/variants/StockDialog.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/variants/StockDialog.test.tsx`:
 
 ```tsx
 import { screen, waitFor } from '@testing-library/react'
@@ -7016,7 +7016,7 @@ describe('StockDialog', () => {
 
 - [ ] **Step 2: Write the failing variants-card test**
 
-`web/apps/admin/src/features/variants/VariantsCard.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/variants/VariantsCard.test.tsx`:
 
 ```tsx
 import { screen, waitFor, within } from '@testing-library/react'
@@ -7173,7 +7173,7 @@ describe('VariantsCard', () => {
 - [ ] **Step 3: Run both to verify they fail**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test variants
 ```
 
@@ -7181,7 +7181,7 @@ Expected: FAIL — `Failed to resolve import "./StockDialog"` and `"./VariantsCa
 
 - [ ] **Step 4: Write the API calls**
 
-`web/apps/admin/src/features/variants/api.ts`:
+`e-commerce-ui/apps/admin/src/features/variants/api.ts`:
 
 ```ts
 import {
@@ -7231,7 +7231,7 @@ export function adjustStock(
 
 - [ ] **Step 5: Write the query hooks**
 
-`web/apps/admin/src/features/variants/queries.ts`:
+`e-commerce-ui/apps/admin/src/features/variants/queries.ts`:
 
 ```ts
 import type {
@@ -7308,7 +7308,7 @@ export function useAdjustStock(
 
 - [ ] **Step 6: Write the stock dialog**
 
-`web/apps/admin/src/features/variants/StockDialog.tsx`:
+`e-commerce-ui/apps/admin/src/features/variants/StockDialog.tsx`:
 
 ```tsx
 import type { AdminVariant } from '@shopflow/api-client'
@@ -7456,7 +7456,7 @@ export function StockDialog({
 
 - [ ] **Step 7: Write the variant form dialog**
 
-`web/apps/admin/src/features/variants/VariantFormDialog.tsx`:
+`e-commerce-ui/apps/admin/src/features/variants/VariantFormDialog.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -7615,7 +7615,7 @@ export function VariantFormDialog({
 
 - [ ] **Step 8: Write the variants card**
 
-`web/apps/admin/src/features/variants/VariantsCard.tsx`:
+`e-commerce-ui/apps/admin/src/features/variants/VariantsCard.tsx`:
 
 ```tsx
 import type { AdminProduct, AdminVariant } from '@shopflow/api-client'
@@ -7799,7 +7799,7 @@ export function VariantsCard({ product }: { product: AdminProduct }): ReactEleme
 
 - [ ] **Step 9: Mount it on the detail page**
 
-In `web/apps/admin/src/features/products/ProductDetailPage.tsx`, add the import and replace the Task 11 comment:
+In `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`, add the import and replace the Task 11 comment:
 
 ```tsx
 import { VariantsCard } from '../variants/VariantsCard'
@@ -7815,7 +7815,7 @@ import { VariantsCard } from '../variants/VariantsCard'
 - [ ] **Step 10: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -7827,7 +7827,7 @@ Expected: PASS, 84 tests. The `turns a target quantity into a signed delta` and 
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): variants with delta-only stock adjustments"
 ```
 
@@ -7840,13 +7840,13 @@ There is **no upload endpoint** — `POST /api/admin/products/{id}/resources` st
 `isPrimary` is a `Boolean` on both request records precisely so "not mentioned" and "set to false" stay distinguishable, and setting one primary demotes the others server-side — so the UI offers **Make primary**, never **Unset primary**.
 
 **Files:**
-- Create: `web/apps/admin/src/features/resources/api.ts`
-- Create: `web/apps/admin/src/features/resources/queries.ts`
-- Create: `web/apps/admin/src/features/resources/ImagePreview.tsx`
-- Create: `web/apps/admin/src/features/resources/AddImageForm.tsx`
-- Create: `web/apps/admin/src/features/resources/ImagesCard.tsx`
-- Modify: `web/apps/admin/src/features/products/ProductDetailPage.tsx`
-- Test: `web/apps/admin/src/features/resources/ImagesCard.test.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/resources/api.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/resources/queries.ts`
+- Create: `e-commerce-ui/apps/admin/src/features/resources/ImagePreview.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/resources/AddImageForm.tsx`
+- Create: `e-commerce-ui/apps/admin/src/features/resources/ImagesCard.tsx`
+- Modify: `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`
+- Test: `e-commerce-ui/apps/admin/src/features/resources/ImagesCard.test.tsx`
 
 **Interfaces:**
 - Consumes: `AdminProduct`, `ProductResource`, `CreateResourceRequest`, `UpdateResourceRequest`, `request` from `@shopflow/api-client`; `PRODUCTS_QUERY_KEY` from Task 9 and `productQueryKey` from Task 11, both in `features/products/queries.ts`; `Badge`, `Button`, `Field`, `TextInput`, `ConfirmDialog`, `useToast`, `describeError`, `applyApiErrorToForm` from Task 5.
@@ -7861,7 +7861,7 @@ There is **no upload endpoint** — `POST /api/admin/products/{id}/resources` st
 
 - [ ] **Step 1: Write the failing test**
 
-`web/apps/admin/src/features/resources/ImagesCard.test.tsx`:
+`e-commerce-ui/apps/admin/src/features/resources/ImagesCard.test.tsx`:
 
 ```tsx
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -8014,7 +8014,7 @@ describe('ImagesCard', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test ImagesCard
 ```
 
@@ -8022,7 +8022,7 @@ Expected: FAIL — `Failed to resolve import "./ImagesCard"`.
 
 - [ ] **Step 3: Write the API calls and hooks**
 
-`web/apps/admin/src/features/resources/api.ts`:
+`e-commerce-ui/apps/admin/src/features/resources/api.ts`:
 
 ```ts
 import {
@@ -8056,7 +8056,7 @@ export function deleteResource(resourceId: string): Promise<void> {
 }
 ```
 
-`web/apps/admin/src/features/resources/queries.ts`:
+`e-commerce-ui/apps/admin/src/features/resources/queries.ts`:
 
 ```ts
 import type {
@@ -8116,7 +8116,7 @@ export function useDeleteResource(productId: string): UseMutationResult<void, un
 
 - [ ] **Step 4: Write the preview**
 
-`web/apps/admin/src/features/resources/ImagePreview.tsx`:
+`e-commerce-ui/apps/admin/src/features/resources/ImagePreview.tsx`:
 
 ```tsx
 import { useEffect, useState, type ReactElement } from 'react'
@@ -8159,7 +8159,7 @@ export function ImagePreview({ url, alt }: { url: string; alt: string }): ReactE
 
 - [ ] **Step 5: Write the add form**
 
-`web/apps/admin/src/features/resources/AddImageForm.tsx`:
+`e-commerce-ui/apps/admin/src/features/resources/AddImageForm.tsx`:
 
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8280,7 +8280,7 @@ export function AddImageForm({
 
 - [ ] **Step 6: Write the card**
 
-`web/apps/admin/src/features/resources/ImagesCard.tsx`:
+`e-commerce-ui/apps/admin/src/features/resources/ImagesCard.tsx`:
 
 ```tsx
 import type { AdminProduct, ProductResource } from '@shopflow/api-client'
@@ -8405,7 +8405,7 @@ export function ImagesCard({ product }: { product: AdminProduct }): ReactElement
 
 - [ ] **Step 7: Mount it on the detail page**
 
-In `web/apps/admin/src/features/products/ProductDetailPage.tsx`, add the import and replace the Task 13 comment:
+In `e-commerce-ui/apps/admin/src/features/products/ProductDetailPage.tsx`, add the import and replace the Task 13 comment:
 
 ```tsx
 import { ImagesCard } from '../resources/ImagesCard'
@@ -8420,7 +8420,7 @@ import { ImagesCard } from '../resources/ImagesCard'
 - [ ] **Step 8: Run the tests to verify they pass**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm test
 pnpm typecheck
 pnpm lint
@@ -8436,7 +8436,7 @@ With the app running, open a product, paste a real image URL (any public one) an
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-git add web/apps/admin
+git add e-commerce-ui/apps/admin
 git commit -m "feat(admin): product images by URL with an honest preview"
 ```
 
@@ -8452,10 +8452,10 @@ Two rules shape the spec:
 2. **Credentials come from the environment, never from the file.** `playwright.config.ts` reads `ADMIN_EMAIL` and `ADMIN_PASSWORD` and fails with an instruction if either is missing. The password is never printed, never defaulted and never written into the spec.
 
 **Files:**
-- Create: `web/apps/admin/playwright.config.ts`
-- Create: `web/apps/admin/e2e/helpers.ts`
-- Create: `web/apps/admin/e2e/catalogue.spec.ts`
-- Modify: `web/apps/admin/package.json` (add the `e2e` script and `@playwright/test`)
+- Create: `e-commerce-ui/apps/admin/playwright.config.ts`
+- Create: `e-commerce-ui/apps/admin/e2e/helpers.ts`
+- Create: `e-commerce-ui/apps/admin/e2e/catalogue.spec.ts`
+- Modify: `e-commerce-ui/apps/admin/package.json` (add the `e2e` script and `@playwright/test`)
 
 **Interfaces:**
 - Consumes: the whole app from Tasks 1–13, running under `vite` on port 5173 with its `/api` and `/auth` proxy (Task 3); `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `e-commerce-backend/.env` (Task 1); the root `e2e` script and the `.gitignore` entries for `test-results/` and `playwright-report/`, both already in place from Task 1.
@@ -8467,12 +8467,12 @@ Two rules shape the spec:
 - [ ] **Step 1: Install Playwright and its browser**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm add -D @playwright/test@^1.62.1
 pnpm exec playwright install chromium
 ```
 
-Then add the script to `web/apps/admin/package.json`:
+Then add the script to `e-commerce-ui/apps/admin/package.json`:
 
 ```json
     "test:watch": "vitest",
@@ -8484,7 +8484,7 @@ Only Chromium is installed. One engine is enough to prove the layout switches; t
 
 - [ ] **Step 2: Write the Playwright configuration**
 
-`web/apps/admin/playwright.config.ts`:
+`e-commerce-ui/apps/admin/playwright.config.ts`:
 
 ```ts
 import { defineConfig, devices } from '@playwright/test'
@@ -8543,7 +8543,7 @@ The `metadata` entry exists to make the config fail at load time when a credenti
 
 - [ ] **Step 3: Write the helpers**
 
-`web/apps/admin/e2e/helpers.ts`:
+`e-commerce-ui/apps/admin/e2e/helpers.ts`:
 
 ```ts
 import { expect, type Page } from '@playwright/test'
@@ -8603,7 +8603,7 @@ export async function ensureCategory(
 
 - [ ] **Step 4: Write the catalogue journey**
 
-`web/apps/admin/e2e/catalogue.spec.ts`:
+`e-commerce-ui/apps/admin/e2e/catalogue.spec.ts`:
 
 ```ts
 import { expect, test } from '@playwright/test'
@@ -8771,10 +8771,10 @@ test('shows the layout that fits the viewport', async ({ page }, testInfo) => {
 
 - [ ] **Step 5: Start the backend and run the suite**
 
-The backend must already be running on port 8080 with the administrator from Task 1. Then, from `web/apps/admin`:
+The backend must already be running on port 8080 with the administrator from Task 1. Then, from `e-commerce-ui/apps/admin`:
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 (set -a; . ../../../e-commerce-backend/.env; set +a; pnpm e2e)
 ```
 
@@ -8789,7 +8789,7 @@ Failures here are real. Read them rather than adjusting the test:
 - [ ] **Step 6: Read the report**
 
 ```bash
-cd web/apps/admin
+cd e-commerce-ui/apps/admin
 pnpm exec playwright show-report
 ```
 
@@ -8800,7 +8800,7 @@ Look at the `mobile` project's screenshots for the products list and the product
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 git status --short
-git check-ignore -v web/apps/admin/test-results web/apps/admin/playwright-report
+git check-ignore -v e-commerce-ui/apps/admin/test-results e-commerce-ui/apps/admin/playwright-report
 ```
 
 Expected: `git status` shows the three new e2e files and the two modified manifests, and nothing from `test-results/`, `playwright-report/` or `e-commerce-backend/.env`. `git check-ignore` must print a matching rule for both artefact directories.
@@ -8808,7 +8808,7 @@ Expected: `git status` shows the three new e2e files and the two modified manife
 - [ ] **Step 8: Commit**
 
 ```bash
-git add web/apps/admin/playwright.config.ts web/apps/admin/e2e web/apps/admin/package.json web/pnpm-lock.yaml
+git add e-commerce-ui/apps/admin/playwright.config.ts e-commerce-ui/apps/admin/e2e e-commerce-ui/apps/admin/package.json e-commerce-ui/pnpm-lock.yaml
 git commit -m "test(admin): end-to-end catalogue journey at phone and laptop widths"
 ```
 
