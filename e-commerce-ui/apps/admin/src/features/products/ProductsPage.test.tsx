@@ -17,6 +17,8 @@ const ABAYA = {
   categoryTypeName: 'Abaya',
   variantCount: 3,
   totalStock: 12,
+  // A live summary carries archivedAt as null, so no row should wear the Archived badge.
+  archivedAt: null,
 }
 
 const SOLD_OUT = {
@@ -141,6 +143,10 @@ describe('ProductsPage', () => {
   it('switches to archived only and labels the archived rows', async () => {
     renderPage()
     await waitFor(() => expect(sent).toHaveLength(1))
+
+    // The badge has to mean something: a live row, whose archivedAt is null, must not wear it.
+    const live = await screen.findByRole('row', { name: /Classic Black Abaya/ })
+    expect(within(live).queryByText('Archived')).not.toBeInTheDocument()
 
     server.use(
       http.get(`${API}/api/admin/products`, ({ request }) => {

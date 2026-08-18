@@ -18,7 +18,8 @@ const PRODUCT = {
   categoryTypeId: '44444444-4444-4444-4444-444444444444',
   categoryTypeName: 'Abaya',
   variants: [
-    { id: LIVE_ID, color: 'Black', size: 'M', stockQuantity: 4 },
+    // `archivedAt: null` is what a live variant really arrives as, not an absent field.
+    { id: LIVE_ID, color: 'Black', size: 'M', stockQuantity: 4, archivedAt: null },
     { id: ARCHIVED_ID, color: 'Sand', size: 'L', stockQuantity: 0, archivedAt: '2026-08-01T10:00:00Z' },
   ],
   resources: [],
@@ -46,6 +47,11 @@ describe('VariantsCard', () => {
 
   it('lists live and archived variants and labels the archived one', () => {
     renderCard()
+
+    // A null archivedAt is a live variant, so the "cannot be bought" warning must be gone.
+    expect(
+      screen.queryByText('No variants yet — customers cannot buy this product'),
+    ).not.toBeInTheDocument()
 
     const live = screen.getByRole('listitem', { name: 'Black / M' })
     expect(within(live).getByText('4 in stock')).toBeInTheDocument()

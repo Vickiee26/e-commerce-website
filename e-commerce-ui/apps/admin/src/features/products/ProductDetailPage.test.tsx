@@ -31,6 +31,9 @@ const PRODUCT = {
   categoryName: 'Abaya',
   categoryTypeId: ABAYA_TYPE_ID,
   categoryTypeName: 'Abaya',
+  // Explicitly null, the way the backend really sends a live product. Omitting it here is what let
+  // `archivedAt !== undefined` ship: every live row looked archived against the real API.
+  archivedAt: null,
   variants: [],
   resources: [],
 }

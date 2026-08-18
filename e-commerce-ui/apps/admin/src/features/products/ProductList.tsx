@@ -2,6 +2,7 @@ import type { AdminProductSummary } from '@shopflow/api-client'
 import type { ReactElement } from 'react'
 import { Link } from 'react-router'
 import { Badge } from '../../components/Badge'
+import { isArchived } from '../../lib/archive'
 import { formatUsd } from '../../lib/format'
 
 /**
@@ -89,7 +90,7 @@ export function ProductList({ products }: { products: AdminProductSummary[] }): 
 function StatusBadges({ product }: { product: AdminProductSummary }): ReactElement {
   return (
     <>
-      {product.archivedAt !== undefined ? <Badge tone="neutral">Archived</Badge> : null}
+      {isArchived(product) ? <Badge tone="neutral">Archived</Badge> : null}
       {product.variantCount === 0 ? <Badge tone="warning">No variants</Badge> : null}
       {product.variantCount > 0 && product.totalStock === 0 ? (
         <Badge tone="danger">Out of stock</Badge>

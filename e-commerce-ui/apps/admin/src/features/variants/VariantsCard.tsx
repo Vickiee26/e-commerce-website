@@ -4,6 +4,7 @@ import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { useToast } from '../../components/Toast'
+import { isArchived } from '../../lib/archive'
 import { describeError } from '../../lib/errors'
 import { StockDialog } from './StockDialog'
 import { VariantFormDialog } from './VariantFormDialog'
@@ -35,7 +36,7 @@ export function VariantsCard({ product }: { product: AdminProduct }): ReactEleme
     setFailure(null)
   }
 
-  const liveCount = product.variants.filter((variant) => variant.archivedAt === undefined).length
+  const liveCount = product.variants.filter((variant) => !isArchived(variant)).length
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -55,7 +56,7 @@ export function VariantsCard({ product }: { product: AdminProduct }): ReactEleme
       {product.variants.length > 0 ? (
         <ul className="mt-3 flex flex-col gap-3">
           {product.variants.map((variant) => {
-            const archived = variant.archivedAt !== undefined
+            const archived = isArchived(variant)
 
             return (
               <li

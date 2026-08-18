@@ -5,6 +5,7 @@ import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ErrorPanel, Skeleton } from '../../components/QueryStates'
 import { useToast } from '../../components/Toast'
+import { archivedAt as readArchivedAt } from '../../lib/archive'
 import { describeError } from '../../lib/errors'
 import { formatDateTime } from '../../lib/format'
 import { ImagesCard } from '../resources/ImagesCard'
@@ -42,7 +43,8 @@ export function ProductDetailPage(): ReactElement {
     )
   }
 
-  const archivedAt = product.data.archivedAt
+  // null for a live product whichever way the API spells it, and a string this page can format.
+  const archivedAt = readArchivedAt(product.data)
 
   const onArchive = (): void => {
     setFailure(null)
@@ -78,7 +80,7 @@ export function ProductDetailPage(): ReactElement {
           <p className="mt-1 text-sm text-slate-600">
             {`${product.data.categoryName} / ${product.data.categoryTypeName}`}
           </p>
-          {archivedAt !== undefined ? (
+          {archivedAt !== null ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge tone="neutral">Archived</Badge>
               <span className="text-xs text-slate-500">{`since ${formatDateTime(archivedAt)}`}</span>
@@ -86,7 +88,7 @@ export function ProductDetailPage(): ReactElement {
           ) : null}
         </div>
 
-        {archivedAt !== undefined ? (
+        {archivedAt !== null ? (
           <Button variant="secondary" onClick={() => setConfirming('restore')}>
             Restore product
           </Button>

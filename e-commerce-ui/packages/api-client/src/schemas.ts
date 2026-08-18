@@ -43,16 +43,25 @@ export type Category = RequireKeys<
   'id' | 'code' | 'name'
 > & { types: CategoryType[] }
 
+/**
+ * The generated document says `archivedAt?: string`, but the backend serialises nulls, so a LIVE
+ * row arrives carrying `archivedAt: null` rather than omitting the field. Admitting that null is
+ * what forces every call site to decide about both spellings of "not archived" — comparing against
+ * `undefined` alone made live rows look archived, which no fixture-based test could catch.
+ */
+type Archivable = { archivedAt?: string | null }
+
 export type AdminVariant = RequireKeys<
-  Schemas['AdminVariantResponse'],
+  Omit<Schemas['AdminVariantResponse'], 'archivedAt'>,
   'id' | 'color' | 'size' | 'stockQuantity'
->
+> &
+  Archivable
 
 export type ProductResource = RequireKeys<Schemas['ProductResourceDto'], 'id' | 'url' | 'isPrimary'>
 
 /** `variantCount` and `totalStock` cover unarchived variants only. */
 export type AdminProductSummary = RequireKeys<
-  Schemas['AdminProductSummaryResponse'],
+  Omit<Schemas['AdminProductSummaryResponse'], 'archivedAt'>,
   | 'id'
   | 'name'
   | 'price'
@@ -62,12 +71,14 @@ export type AdminProductSummary = RequireKeys<
   | 'categoryTypeName'
   | 'variantCount'
   | 'totalStock'
->
+> &
+  Archivable
 
 export type AdminProduct = RequireKeys<
-  Omit<Schemas['AdminProductResponse'], 'variants' | 'resources'>,
+  Omit<Schemas['AdminProductResponse'], 'variants' | 'resources' | 'archivedAt'>,
   'id' | 'name' | 'price' | 'categoryId' | 'categoryName' | 'categoryTypeId' | 'categoryTypeName'
-> & { variants: AdminVariant[]; resources: ProductResource[] }
+> &
+  Archivable & { variants: AdminVariant[]; resources: ProductResource[] }
 
 export type StockAdjustment = RequireKeys<
   Schemas['StockAdjustmentResponse'],
